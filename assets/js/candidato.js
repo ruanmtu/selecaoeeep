@@ -1,5 +1,8 @@
 /* Tela do candidato: leitura dos documentos, tabela de notas e média ao vivo */
-import { lerArquivos, interpretarDocumento, interpretarNotas, textoPdf } from './leitura.js';
+// o "?v=" obriga o navegador a baixar a versão nova (sem ele, um leitura.js antigo guardado no cache quebrava a página toda)
+import * as L from './leitura.js?v=6';
+const { lerArquivos, interpretarDocumento, interpretarNotas } = L;
+async function textoPdf(f) { try { return L.textoPdf ? await L.textoPdf(f) : ''; } catch (e) { return ''; } }
 const $ = s => document.querySelector(s);
 const num = v => { v = String(v).trim().replace(',', '.'); if (v === '' || isNaN(v)) return null; let n = parseFloat(v); if (n > 10 && n <= 100) n /= 10; return n >= 0 && n <= 10 ? n : NaN; };
 const br = (v, c = 2) => v === null || isNaN(v) ? '—' : v.toFixed(c).replace('.', ',');

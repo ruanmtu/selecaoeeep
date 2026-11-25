@@ -7,6 +7,10 @@ RedirectMatch 404 ^/includes(/|$)
 </FilesMatch>
 <IfModule mod_headers.c>
     Header always set X-Robots-Tag "noindex, nofollow"
+    # scripts e estilos: o navegador sempre confere se há versão nova (evita misturar arquivo novo com antigo)
+    <FilesMatch "\.(js|mjs|css)$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
 </IfModule>
 # Força HTTPS: ative quando o certificado SSL do subdomínio estiver ativo na Hostinger
 # RewriteEngine On
