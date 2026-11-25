@@ -1,6 +1,6 @@
 /* Tela do candidato: leitura dos documentos, tabela de notas e média ao vivo */
 // o "?v=" obriga o navegador a baixar a versão nova (sem ele, um leitura.js antigo guardado no cache quebrava a página toda)
-import * as L from './leitura.js?v=6';
+import * as L from './leitura.js?v=7';
 const { lerArquivos, interpretarDocumento, interpretarNotas } = L;
 async function textoPdf(f) { try { return L.textoPdf ? await L.textoPdf(f) : ''; } catch (e) { return ''; } }
 const $ = s => document.querySelector(s);
@@ -104,7 +104,13 @@ async function lerGemini(k, arquivos) {
     fd.append('arq[]', await reduzir(f, k === 'doc' ? 1600 : 2200));
   }
   const r = await fetch('ler.php', { method: 'POST', body: fd, credentials: 'same-origin' });
-  const j = await r.json().catch(() => ({ erro: 'Resposta inválida do servidor.' }));
+  const bruto = await r.text(); let j;
+  try { j = JSON.parse(bruto); } catch (e) {   // o servidor não devolveu JSON: mostra o motivo real
+    const det = bruto.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+    j = { erro: r.status === 504 || r.status === 502 ? 'O servidor desistiu de esperar o Gemini (erro ' + r.status + '). Tente de novo.'
+      : r.status === 413 ? 'Arquivo grande demais para o servidor (erro 413). Mande uma foto menor ou o PDF.'
+      : 'O servidor respondeu com erro ' + r.status + (det ? ': ' + det : ' sem detalhes') + '.' };
+  }
   if (!r.ok || !j.ok) throw new Error(j.erro || 'Não foi possível ler.');
   return j;
 }

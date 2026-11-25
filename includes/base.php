@@ -6,7 +6,7 @@
  * ====================================================================== */
 declare(strict_types=1);
 
-const SEL_VERSAO = '6';
+const SEL_VERSAO = '7';
 const SEL_RAIZ_ESCOLA = 'https://eeepvenceslau.com.br/';
 const SEL_DISC_PADRAO = ['Língua Portuguesa', 'Matemática', 'Ciências', 'História', 'Geografia', 'Arte', 'Educação Física', 'Língua Inglesa', 'Ensino Religioso'];
 

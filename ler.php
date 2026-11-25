@@ -3,9 +3,21 @@
  * em JSON e devolve para o formulário. Nada é gravado aqui: nem a imagem, nem o texto lido. */
 require __DIR__ . '/includes/base.php';
 header('Content-Type: application/json; charset=utf-8');
+/* a resposta é sempre JSON: avisos do PHP não podem sujar a saída, e um erro fatal vira mensagem legível */
+ini_set('display_errors', '0');
+ob_start();
+register_shutdown_function(function () {
+    $e = error_get_last();
+    if (!$e || !in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) return;
+    while (ob_get_level()) ob_end_clean();
+    $msg = 'Erro no servidor: ' . $e['message'] . ' (linha ' . $e['line'] . ')';
+    try { cfg_gravar('gemini_ultimo_erro', date('d/m/Y H:i') . ' · ' . mb_substr($msg, 0, 300)); } catch (Throwable $t) {}
+    if (!headers_sent()) { http_response_code(500); header('Content-Type: application/json; charset=utf-8'); }
+    echo json_encode(['erro' => $msg], JSON_UNESCAPED_UNICODE);
+});
 $INICIO = microtime(true);
 $u = usuario();
-$resp = function (array $x, int $cod = 200) { http_response_code($cod); echo json_encode($x, JSON_UNESCAPED_UNICODE); exit; };
+$resp = function (array $x, int $cod = 200) { while (ob_get_level()) ob_end_clean(); http_response_code($cod); echo json_encode($x, JSON_UNESCAPED_UNICODE); exit; };
 if (!$u) $resp(['erro' => 'Sua sessão expirou. Entre de novo.'], 401);
 if (!eh_post() || !hash_equals(csrf_token(), (string)($_POST['csrf'] ?? ''))) $resp(['erro' => 'Formulário expirado. Recarregue a página.'], 400);
 if (!gemini_configurado()) $resp(['erro' => 'Falta GEMINI_API_KEY no config.php.'], 400);
@@ -18,7 +30,7 @@ if ($tipo !== 'teste' && !gemini_ativo()) $resp(['erro' => 'A leitura com o Gemi
    esperando (e o servidor devolve 504) */
 session_write_close();
 /* prazo total da leitura: termina antes do limite do servidor (uns 60 s), nunca deixa a página pendurada */
-const PRAZO_TOTAL = 48;
+const PRAZO_TOTAL = 40;
 function resta(): float { return PRAZO_TOTAL - (microtime(true) - $GLOBALS['INICIO']); }
 
 /* tipo do arquivo pelos primeiros bytes (não depende de extensão do PHP) */
@@ -100,7 +112,7 @@ function gemini_post(string $base, string $modelo, string $chave, string $corpo)
     curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $corpo, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => (int)max(4, min(40, resta())), CURLOPT_CONNECTTIMEOUT => 8,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'x-goog-api-key: ' . $chave]]);
     $t0 = microtime(true);
-    $b = curl_exec($ch); $c = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $e = curl_error($ch); curl_close($ch);
+    $b = curl_exec($ch); $c = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $e = curl_error($ch);
     if ($c === 400) {   // modelo que não aceita algum ajuste de velocidade: tira só esse ajuste e repete
         $j = json_decode($corpo, true); $g = &$j['generationConfig']; $msg = (string)$b;
         if (preg_match('/thinking/i', $msg) && ($g['thinkingConfig']['thinkingLevel'] ?? '') === 'minimal') { $g['thinkingConfig']['thinkingLevel'] = 'low'; return gemini_post($base, $modelo, $chave, json_encode($j)); }
@@ -115,7 +127,7 @@ function gemini_descobrir(string $base, string $chave, string $dica = ''): ?stri
     if ($dica !== '') return $dica;
     $ch = curl_init(rtrim($base, '/') . '?pageSize=1000');
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $chave]]);
-    $j = json_decode((string)curl_exec($ch), true); curl_close($ch);
+    $j = json_decode((string)curl_exec($ch), true);
     $opc = [];
     foreach ((array)($j['models'] ?? []) as $m) {
         $n = preg_replace('#^models/#', '', (string)($m['name'] ?? ''));
@@ -132,7 +144,7 @@ function gemini_alternativos(string $base, string $chave, string $atual): array
 {
     $ch = curl_init(rtrim($base, '/') . '?pageSize=1000');
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $chave]]);
-    $j = json_decode((string)curl_exec($ch), true); curl_close($ch);
+    $j = json_decode((string)curl_exec($ch), true);
     $opc = [];
     foreach ((array)($j['models'] ?? []) as $m) {
         $n = preg_replace('#^models/#', '', (string)($m['name'] ?? ''));
