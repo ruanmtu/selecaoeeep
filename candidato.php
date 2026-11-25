@@ -21,11 +21,12 @@ if (eh_post()) {
         flash('ok', $c['nome'] . ' foi excluído(a) da seleção.'); redirecionar('candidatos.php');
     }
     $f = fn($k, $n = 160) => mb_substr(trim((string)($_POST[$k] ?? '')), 0, $n);
-    $d = ['nome' => nome_proprio($f('nome')), 'cpf' => cpf_fmt($f('cpf', 20)), 'nascimento' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $f('nascimento')) ? $f('nascimento') : null,
-          'pai' => nome_proprio($f('pai')), 'mae' => nome_proprio($f('mae')), 'email' => mb_strtolower($f('email')), 'telefone' => $f('telefone', 30),
-          'endereco' => $f('endereco', 255), 'bairro' => $f('bairro', 120), 'cidade' => $f('cidade', 120), 'escola_origem' => $f('escola_origem'),
-          'naturalidade' => $f('naturalidade', 120), 'sexo' => in_array($f('sexo', 20), ['Feminino', 'Masculino'], true) ? $f('sexo', 20) : null,
-          'titular' => nome_proprio($f('titular')), 'cep' => $f('cep', 10),
+    $M = fn($k, $n = 160) => mb_strtoupper($f($k, $n));   // nomes e endereço sempre em letra maiúscula
+    $d = ['nome' => $M('nome'), 'cpf' => cpf_fmt($f('cpf', 20)), 'nascimento' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $f('nascimento')) ? $f('nascimento') : null,
+          'pai' => $M('pai'), 'mae' => $M('mae'), 'email' => mb_strtolower($f('email')), 'telefone' => $f('telefone', 30),
+          'endereco' => $M('endereco', 255), 'bairro' => $M('bairro', 120), 'cidade' => $M('cidade', 120), 'escola_origem' => $M('escola_origem'),
+          'naturalidade' => $M('naturalidade', 120), 'sexo' => in_array($f('sexo', 20), ['Feminino', 'Masculino'], true) ? $f('sexo', 20) : null,
+          'titular' => $M('titular'), 'cep' => $f('cep', 10),
           'curso' => $f('curso', 60), 'cota_bairro' => !empty($_POST['cota_bairro']) ? 1 : 0, 'pcd' => !empty($_POST['pcd']) ? 1 : 0, 'obs' => $f('obs', 500)];
     $erros = [];
     if (mb_strlen($d['nome']) < 5) $erros[] = 'Preencha o nome completo do candidato.';
@@ -101,13 +102,13 @@ require __DIR__ . '/includes/topo.php';
                 <div class="sl-miniaturas" data-mini="doc"></div>
                 <div class="sl-ler" data-status="doc" hidden></div></div>
         <div class="col-lg-8"><div class="row g-2">
-            <div class="col-12"><label class="form-label" for="nome">Nome completo do candidato</label><input class="form-control" id="nome" name="nome" required maxlength="160" value="<?= e($val('nome')) ?>"></div>
+            <div class="col-12"><label class="form-label" for="nome">Nome completo do candidato</label><input class="form-control maiusc" id="nome" name="nome" required maxlength="160" value="<?= e($val('nome')) ?>"></div>
             <div class="col-6 col-md-4"><label class="form-label" for="cpf">CPF</label><input class="form-control" id="cpf" name="cpf" inputmode="numeric" maxlength="14" value="<?= e($val('cpf')) ?>" placeholder="000.000.000-00"><div class="invalid-feedback">CPF inválido</div></div>
             <div class="col-6 col-md-4"><label class="form-label" for="nascimento">Data de nascimento</label><input class="form-control" id="nascimento" name="nascimento" type="date" value="<?= e($val('nascimento')) ?>"></div>
             <div class="col-12 col-md-4"><label class="form-label" for="sexo">Sexo</label><select class="form-select" id="sexo" name="sexo"><option value="">—</option><?php foreach (['Feminino', 'Masculino'] as $sx): ?><option<?= $val('sexo') === $sx ? ' selected' : '' ?>><?= $sx ?></option><?php endforeach; ?></select></div>
-            <div class="col-md-6"><label class="form-label" for="mae">Nome da mãe</label><input class="form-control" id="mae" name="mae" maxlength="160" value="<?= e($val('mae')) ?>"></div>
-            <div class="col-md-6"><label class="form-label" for="pai">Nome do pai</label><input class="form-control" id="pai" name="pai" maxlength="160" value="<?= e($val('pai')) ?>"></div>
-            <div class="col-md-6"><label class="form-label" for="naturalidade">Naturalidade</label><input class="form-control" id="naturalidade" name="naturalidade" maxlength="160" value="<?= e($val('naturalidade')) ?>" placeholder="Cidade - UF"></div>
+            <div class="col-md-6"><label class="form-label" for="mae">Nome da mãe</label><input class="form-control maiusc" id="mae" name="mae" maxlength="160" value="<?= e($val('mae')) ?>"></div>
+            <div class="col-md-6"><label class="form-label" for="pai">Nome do pai</label><input class="form-control maiusc" id="pai" name="pai" maxlength="160" value="<?= e($val('pai')) ?>"></div>
+            <div class="col-md-6"><label class="form-label" for="naturalidade">Naturalidade</label><input class="form-control maiusc" id="naturalidade" name="naturalidade" maxlength="160" value="<?= e($val('naturalidade')) ?>" placeholder="Cidade - UF"></div>
         </div></div>
     </div></div>
 </section>
@@ -120,12 +121,12 @@ require __DIR__ . '/includes/topo.php';
                 <div class="sl-miniaturas" data-mini="end"></div>
                 <div class="sl-ler" data-status="end" hidden></div></div>
         <div class="col-lg-8"><div class="row g-2">
-            <div class="col-md-8"><label class="form-label" for="titular">Titular do comprovante de residência</label><input class="form-control" id="titular" name="titular" maxlength="160" value="<?= e($val('titular')) ?>"></div>
+            <div class="col-md-8"><label class="form-label" for="titular">Titular do comprovante de residência</label><input class="form-control maiusc" id="titular" name="titular" maxlength="160" value="<?= e($val('titular')) ?>"></div>
             <div class="col-md-4"><label class="form-label" for="telefone">Telefone</label><input class="form-control" id="telefone" name="telefone" inputmode="tel" maxlength="30" value="<?= e($val('telefone')) ?>"></div>
-            <div class="col-md-8"><label class="form-label" for="endereco">Endereço</label><input class="form-control" id="endereco" name="endereco" maxlength="255" value="<?= e($val('endereco')) ?>" placeholder="Rua, número"></div>
+            <div class="col-md-8"><label class="form-label" for="endereco">Endereço</label><input class="form-control maiusc" id="endereco" name="endereco" maxlength="255" value="<?= e($val('endereco')) ?>" placeholder="Rua, número"></div>
             <div class="col-md-4"><label class="form-label" for="cep">CEP</label><input class="form-control" id="cep" name="cep" inputmode="numeric" maxlength="10" value="<?= e($val('cep')) ?>" placeholder="00000-000"></div>
-            <div class="col-md-6"><label class="form-label" for="bairro">Bairro / localidade</label><input class="form-control" id="bairro" name="bairro" maxlength="120" list="listaBairros" value="<?= e($val('bairro')) ?>"><datalist id="listaBairros"><?php foreach (sel_bairros() as $b): ?><option value="<?= e($b) ?>"><?php endforeach; ?></datalist></div>
-            <div class="col-md-6"><label class="form-label" for="cidade">Cidade</label><input class="form-control" id="cidade" name="cidade" maxlength="120" value="<?= e($val('cidade') ?: 'Boa Viagem') ?>"></div>
+            <div class="col-md-6"><label class="form-label" for="bairro">Bairro / localidade</label><input class="form-control maiusc" id="bairro" name="bairro" maxlength="120" list="listaBairros" value="<?= e($val('bairro')) ?>"><datalist id="listaBairros"><?php foreach (sel_bairros() as $b): ?><option value="<?= e($b) ?>"><?php endforeach; ?></datalist></div>
+            <div class="col-md-6"><label class="form-label" for="cidade">Cidade</label><input class="form-control maiusc" id="cidade" name="cidade" maxlength="120" value="<?= e($val('cidade') ?: 'BOA VIAGEM') ?>"></div>
         </div></div>
     </div></div>
 </section>
@@ -139,7 +140,7 @@ require __DIR__ . '/includes/topo.php';
                 <div class="sl-ler" data-status="h68" hidden></div></div>
         <div class="col-lg-8"><div class="row g-2">
             <div class="col-md-6"><label class="form-label" for="email">E-mail</label><input class="form-control" id="email" name="email" type="email" maxlength="160" value="<?= e($val('email')) ?>"></div>
-            <div class="col-md-6"><label class="form-label" for="escola_origem">Escola de origem</label><input class="form-control" id="escola_origem" name="escola_origem" maxlength="160" value="<?= e($val('escola_origem')) ?>"></div>
+            <div class="col-md-6"><label class="form-label" for="escola_origem">Escola de origem</label><input class="form-control maiusc" id="escola_origem" name="escola_origem" maxlength="160" value="<?= e($val('escola_origem')) ?>"></div>
         </div>
         <p class="small text-secondary mt-2 mb-0">O telefone lido no histórico vai para o campo Telefone da parte 2, se ele estiver vazio.</p></div>
     </div>

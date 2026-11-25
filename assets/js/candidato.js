@@ -53,7 +53,7 @@ function conferirBairro() {
 ['bairro', 'endereco'].forEach(k => $('#' + k).addEventListener('change', conferirBairro));
 
 /* ---------- leitura dos arquivos ---------- */
-function marcar(inp, v) { if (!v || inp.value.trim()) return false; inp.value = v; inp.classList.add('sl-lido'); setTimeout(() => inp.classList.remove('sl-lido'), 2500); return true; }
+function marcar(inp, v) { if (!v || inp.value.trim()) return false; inp.value = inp.classList.contains('maiusc') ? String(v).toUpperCase() : v; inp.classList.add('sl-lido'); setTimeout(() => inp.classList.remove('sl-lido'), 2500); return true; }
 function status(k, html, erro) { const s = document.querySelector(`[data-status="${k}"]`); s.hidden = !html; s.classList.toggle('erro', !!erro); s.innerHTML = html || ''; }
 function barra(k, txt) { status(k, `<i class="bi bi-hourglass-split"></i><span>${txt}</span><div class="progress"><div class="progress-bar" style="width:0%"></div></div>`); return p => { const b = document.querySelector(`[data-status="${k}"] .progress-bar`); if (b) b.style.width = Math.round(p * 100) + '%'; }; }
 
@@ -63,12 +63,12 @@ function aplicarDoc(k, r) {
   const achados = [];
   for (const [campo, rot] of CAMPOS) {
     const inp = $('#' + campo); if (!inp || !r[campo]) continue;
-    if (campo === 'cidade' && inp.value === 'Boa Viagem') inp.value = '';
+    if (campo === 'cidade' && /^boa viagem$/i.test(inp.value)) inp.value = '';
     if (marcar(inp, r[campo])) achados.push(rot);
   }
   if (r.cota_bairro) $('#cotaBairro').checked = true;
   cpf.dispatchEvent(new Event('input')); conferirBairro();
-  if ($('#cidade') && !$('#cidade').value) $('#cidade').value = 'Boa Viagem';
+  if ($('#cidade') && !$('#cidade').value) $('#cidade').value = 'BOA VIAGEM';
   return achados;
 }
 function aplicarNotas(k, r) {
@@ -84,12 +84,12 @@ function aplicarNotas(k, r) {
 }
 /* foto grande -> JPEG de até 2000 px (envio mais rápido para o Gemini) */
 async function reduzir(f) {
-  if (!f.type.startsWith('image/') || f.size < 900 * 1024) return f;
+  if (!f.type.startsWith('image/') || f.size < 350 * 1024) return f;
   try {
-    const bmp = await createImageBitmap(f), k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    const bmp = await createImageBitmap(f), k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
     const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
     c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-    const b = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.88));
+    const b = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.82));
     return b ? new File([b], 'foto.jpg', { type: 'image/jpeg' }) : f;
   } catch (e) { return f; }
 }
@@ -142,3 +142,6 @@ document.querySelectorAll('[data-ler]').forEach(l => {
 let sujo = false; document.getElementById('fCand').addEventListener('input', () => sujo = true);
 document.getElementById('fCand').addEventListener('submit', () => sujo = false);
 addEventListener('beforeunload', e => { if (sujo) { e.preventDefault(); e.returnValue = ''; } });
+
+/* nomes e endereço sempre em letra maiúscula, também quando digitados */
+document.querySelectorAll('.maiusc').forEach(i => i.addEventListener('input', () => { const p = i.selectionStart; i.value = i.value.toUpperCase(); try { i.setSelectionRange(p, p); } catch (e) {} }));

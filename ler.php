@@ -65,7 +65,7 @@ $cfgs = [
 $corpo = json_encode([
     'system_instruction' => ['parts' => [['text' => $instr]]],
     'contents' => [['role' => 'user', 'parts' => array_merge($partes, [['text' => $tipo === 'teste' ? 'Devolva {"ok":"sim"}.' : 'Extraia os dados destes arquivos.']])]],
-    'generationConfig' => ['responseMimeType' => 'application/json', 'responseSchema' => $schema, 'thinkingConfig' => ['thinkingLevel' => 'low']],
+    'generationConfig' => ['responseMimeType' => 'application/json', 'responseSchema' => $schema, 'thinkingConfig' => ['thinkingLevel' => 'minimal'], 'mediaResolution' => 'MEDIA_RESOLUTION_MEDIUM'],
 ]);
 unset($partes);
 
@@ -87,9 +87,11 @@ function gemini_post(string $base, string $modelo, string $chave, string $corpo)
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'x-goog-api-key: ' . $chave]]);
     $t0 = microtime(true);
     $b = curl_exec($ch); $c = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $e = curl_error($ch); curl_close($ch);
-    if ($c === 400 && preg_match('/thinking/i', (string)$b) && str_contains($corpo, 'thinkingConfig')) {   // modelo sem suporte: sem o ajuste
-        $j = json_decode($corpo, true); unset($j['generationConfig']['thinkingConfig']);
-        return gemini_post($base, $modelo, $chave, json_encode($j));
+    if ($c === 400) {   // modelo que não aceita algum ajuste de velocidade: tira só esse ajuste e repete
+        $j = json_decode($corpo, true); $g = &$j['generationConfig']; $msg = (string)$b;
+        if (preg_match('/thinking/i', $msg) && ($g['thinkingConfig']['thinkingLevel'] ?? '') === 'minimal') { $g['thinkingConfig']['thinkingLevel'] = 'low'; return gemini_post($base, $modelo, $chave, json_encode($j)); }
+        if (preg_match('/thinking/i', $msg) && isset($g['thinkingConfig'])) { unset($g['thinkingConfig']); return gemini_post($base, $modelo, $chave, json_encode($j)); }
+        if (preg_match('/media.?resolution/i', $msg) && isset($g['mediaResolution'])) { unset($g['mediaResolution']); return gemini_post($base, $modelo, $chave, json_encode($j)); }
     }
     gemini_historico($modelo, $c, microtime(true) - $t0);
     return [$b, $c, $e];
@@ -130,7 +132,7 @@ function gemini_alternativos(string $base, string $chave, string $atual): array
 $modelo = defined('GEMINI_MODELO') ? GEMINI_MODELO : (cfg('gemini_modelo') ?: 'gemini-3.8-flash');
 [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo);
 /* sobrecarga do Google (503/500): espera e tenta de novo; depois tenta outro modelo flash da conta */
-foreach ([2, 5] as $espera) {
+foreach ([1] as $espera) {
     if (!in_array($cod, [500, 503], true)) break;
     sleep($espera); [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo);
 }
@@ -177,18 +179,18 @@ if ($tipo === 'doc') {
     if ($r['nascimento'] && preg_match('#^(\d{2})/(\d{2})/(\d{4})$#', $r['nascimento'], $m)) $r['nascimento'] = "$m[3]-$m[2]-$m[1]";
     if ($r['nascimento'] && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $r['nascimento'])) $r['nascimento'] = null;
     if ($r['cpf']) { if (!cpf_valido($r['cpf'])) $r['cpf_duvida'] = true; $r['cpf'] = cpf_fmt($r['cpf']); }
-    foreach (['nome', 'pai', 'mae'] as $k) if ($r[$k]) $r[$k] = nome_proprio($r[$k]);
+    foreach (['nome', 'pai', 'mae', 'naturalidade'] as $k) if ($r[$k]) $r[$k] = mb_strtoupper($r[$k]);
     if ($r['sexo']) $r['sexo'] = stripos($r['sexo'], 'f') === 0 ? 'Feminino' : (stripos($r['sexo'], 'm') === 0 ? 'Masculino' : $r['sexo']);
 } elseif ($tipo === 'end') {
     foreach (['titular', 'telefone', 'endereco', 'bairro', 'cidade', 'cep'] as $k) $r[$k] = $t($dados[$k] ?? null);
-    if ($r['titular']) $r['titular'] = nome_proprio($r['titular']);
+    foreach (['titular', 'endereco', 'bairro', 'cidade'] as $k) if ($r[$k]) $r[$k] = mb_strtoupper($r[$k]);
     if ($r['telefone']) $r['telefone'] = $tel($r['telefone']);
     if ($r['cep'] && strlen(so_digitos($r['cep'])) === 8) { $c = so_digitos($r['cep']); $r['cep'] = substr($c, 0, 5) . '-' . substr($c, 5); }
     $r['cota_bairro'] = eh_bairro_cota($r['bairro'] ?? '', $r['endereco'] ?? '');
 } else {
     $r['email'] = $t($dados['email'] ?? null); if ($r['email'] && !filter_var($r['email'], FILTER_VALIDATE_EMAIL)) $r['email'] = null; if ($r['email']) $r['email'] = mb_strtolower($r['email']);
     $r['telefone'] = $t($dados['telefone'] ?? null) ? $tel($dados['telefone']) : null;
-    if ($tipo === 'h68') $r['escola_origem'] = $t($dados['escola'] ?? null);
+    if ($tipo === 'h68' && ($x = $t($dados['escola'] ?? null))) $r['escola_origem'] = mb_strtoupper($x);
 }
 $r = array_filter($r, fn($v) => $v !== null && $v !== '');
 $notas = [];

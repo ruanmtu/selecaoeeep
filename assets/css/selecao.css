@@ -200,3 +200,4 @@ tr.sl-corte td { border-bottom: 3px solid var(--laranja) !important; }
 @media (min-width: 992px) { .sl-casca { background: linear-gradient(90deg, #062a14 0 236px, transparent 236px); } }
 .sl-motor { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 99px; background: #fff; border: 1px solid var(--borda); font-size: .85rem; color: var(--cinza); margin-bottom: 14px; }
 .sl-motor i { color: var(--laranja); }
+.maiusc { text-transform: uppercase; }
