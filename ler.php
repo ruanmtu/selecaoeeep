@@ -69,13 +69,42 @@ $corpo = json_encode([
 ]);
 unset($partes);
 
-$modelo = defined('GEMINI_MODELO') ? GEMINI_MODELO : 'gemini-2.5-flash';
-$url = (defined('GEMINI_URL') ? GEMINI_URL : 'https://generativelanguage.googleapis.com/v1beta/models/') . rawurlencode($modelo) . ':generateContent';
-$ch = curl_init($url);
-curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $corpo, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 100, CURLOPT_CONNECTTIMEOUT => 12,
-    CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'x-goog-api-key: ' . trim((string)GEMINI_API_KEY)]]);
-$bruto = curl_exec($ch); $cod = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $erroCurl = curl_error($ch); curl_close($ch);
-unset($corpo);
+/* modelo: o do config.php, senão o último que funcionou, senão o mais novo "flash" da conta.
+   O Google aposenta modelos de tempos em tempos: se o modelo sumir, o sistema descobre outro sozinho. */
+$base = defined('GEMINI_URL') ? GEMINI_URL : 'https://generativelanguage.googleapis.com/v1beta/models/';
+$chave = trim((string)GEMINI_API_KEY);
+function gemini_post(string $base, string $modelo, string $chave, string $corpo): array
+{
+    $ch = curl_init($base . rawurlencode($modelo) . ':generateContent');
+    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $corpo, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 100, CURLOPT_CONNECTTIMEOUT => 12,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'x-goog-api-key: ' . $chave]]);
+    $b = curl_exec($ch); $c = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $e = curl_error($ch); curl_close($ch);
+    return [$b, $c, $e];
+}
+function gemini_descobrir(string $base, string $chave, string $dica = ''): ?string
+{
+    if ($dica !== '') return $dica;
+    $ch = curl_init(rtrim($base, '/') . '?pageSize=1000');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $chave]]);
+    $j = json_decode((string)curl_exec($ch), true); curl_close($ch);
+    $opc = [];
+    foreach ((array)($j['models'] ?? []) as $m) {
+        $n = preg_replace('#^models/#', '', (string)($m['name'] ?? ''));
+        if (!in_array('generateContent', (array)($m['supportedGenerationMethods'] ?? []), true)) continue;
+        if (!preg_match('/^gemini-[\d.]+-flash$/', $n)) continue;   // só "gemini-X-flash" estável (sem lite, preview, image…)
+        preg_match('/gemini-([\d.]+)-/', $n, $v); $opc[$n] = (float)$v[1];
+    }
+    if (!$opc) return null;
+    arsort($opc); return array_key_first($opc);
+}
+$modelo = defined('GEMINI_MODELO') ? GEMINI_MODELO : (cfg('gemini_modelo') ?: 'gemini-3.8-flash');
+[$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo);
+if ($cod === 404 || ($cod === 400 && preg_match('/not (found|supported)|no longer available/i', (string)$bruto))) {
+    preg_match('#use (?:models/)?(gemini-[\w.\-]+)#i', (string)(json_decode((string)$bruto, true)['error']['message'] ?? ''), $sug);
+    $novo = gemini_descobrir($base, $chave, $sug[1] ?? '');
+    if ($novo && $novo !== $modelo) { $modelo = $novo; [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo); }
+}
+if ($cod === 200) cfg_gravar('gemini_modelo', $modelo);
 $falha = function (string $msg, int $cod = 502) use ($resp, $tipo) { cfg_gravar('gemini_ultimo_erro', date('d/m/Y H:i') . ' · ' . $tipo . ' · ' . mb_substr($msg, 0, 300)); $resp(['erro' => $msg], $cod); };
 if ($bruto === false) $falha('Não foi possível falar com o Gemini (' . $erroCurl . ').');
 $j = json_decode($bruto, true);

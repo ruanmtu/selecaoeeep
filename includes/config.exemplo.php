@@ -11,4 +11,4 @@ define('SEL_CHAVE_INSTALACAO', 'troque-por-uma-frase-longa-e-secreta');
 define('EXIBIR_ERROS', false);
 /* Opcional: leitura das fotos com o Gemini. Crie a chave em https://aistudio.google.com/apikey */
 // define('GEMINI_API_KEY', 'cole-a-chave-aqui');
-// define('GEMINI_MODELO', 'gemini-2.5-flash');
+// define('GEMINI_MODELO', 'gemini-3.8-flash');   // opcional: sem esta linha, o sistema escolhe sozinho o modelo flash mais novo
