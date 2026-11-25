@@ -1,0 +1,46 @@
+# Publica o sistema da seleção por FTP sempre que algo entra na branch main
+# (ou manualmente, em Actions › Publicar › Run workflow).
+# Segredos necessários (Settings › Secrets and variables › Actions):
+#   FTP_SERVIDOR, FTP_USUARIO, FTP_SENHA  e  FTP_PASTA (pasta do site no servidor, terminando em /)
+# Nunca apaga nada no servidor e nunca envia includes/config.php.
+name: Publicar
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: publicar-selecao
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Conferir segredos do FTP
+        id: seg
+        env:
+          S: ${{ secrets.FTP_SERVIDOR }}
+          P: ${{ secrets.FTP_PASTA }}
+        run: |
+          if [ -z "$S" ] || [ -z "$P" ]; then echo "Faltam os segredos FTP_SERVIDOR/FTP_PASTA: nada foi publicado."; echo "ok=0" >> $GITHUB_OUTPUT; else echo "ok=1" >> $GITHUB_OUTPUT; fi
+      - name: Enviar por FTP
+        if: steps.seg.outputs.ok == '1'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVIDOR }}
+          username: ${{ secrets.FTP_USUARIO }}
+          password: ${{ secrets.FTP_SENHA }}
+          protocol: ftp
+          port: 21
+          server-dir: ${{ secrets.FTP_PASTA }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            .github/**
+            LEIA-ME.md
+            includes/config.php
+            dados/**
