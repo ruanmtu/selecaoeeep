@@ -113,14 +113,15 @@ function resultado(k, j, aviso = '') {
     status(k, n ? `<i class="bi bi-check-circle"></i><span><b>${n} notas</b> lidas em ${d} disciplinas${motor}.${extra} Confira com o documento antes de salvar.${aviso}</span>` : `<i class="bi bi-exclamation-triangle"></i><span>Não achei as notas nesse arquivo${motor}. Tente uma foto mais de perto, bem reta, ou digite.${aviso}</span>`, !n);
   }
 }
+const ultimos = {};
 async function processar(k, arquivos) {
-  let avisoG = '';
+  let avisoG = ''; const repetindo = ultimos[k] === arquivos; ultimos[k] = arquivos;
   if (!arquivos.length) return;
-  { const mini = document.querySelector(`[data-mini="${k}"]`); [...arquivos].forEach(f => { if (f.type.startsWith('image/')) { const i = document.createElement('img'); i.src = URL.createObjectURL(f); i.alt = ''; mini.appendChild(i); } else { const s = document.createElement('span'); s.textContent = 'PDF'; mini.appendChild(s); } }); }
+  if (!repetindo) { const mini = document.querySelector(`[data-mini="${k}"]`); [...arquivos].forEach(f => { if (f.type.startsWith('image/')) { const i = document.createElement('img'); i.src = URL.createObjectURL(f); i.alt = ''; mini.appendChild(i); } else { const s = document.createElement('span'); s.textContent = 'PDF'; mini.appendChild(s); } }); }
   if (window.SEL_GEMINI) {
     status(k, `<span class="spinner-border spinner-border-sm"></span><span>Lendo com o Gemini…</span>`);
     try { resultado(k, await lerGemini(k, arquivos)); return; }
-    catch (e) { avisoG = ` <br><small class="text-danger">Gemini não leu: ${e.message}</small>`; }
+    catch (e) { avisoG = ` <br><small class="text-danger">Gemini não leu: ${e.message}</small> <button type="button" class="btn btn-sm btn-light mt-1" data-repetir="${k}"><i class="bi bi-arrow-repeat me-1"></i>Tentar de novo com o Gemini</button>`; }
   }
   const prog = barra(k, 'Lendo neste aparelho… na primeira vez demora um pouco mais');
   try {
@@ -129,9 +130,10 @@ async function processar(k, arquivos) {
     else resultado(k, { dados: interpretarDocumento(texto, []), notas: interpretarNotas(texto, k === 'h68' ? '68' : '9') }, avisoG || '');
   } catch (e) { status(k, `<i class="bi bi-x-octagon"></i><span>${e.message || 'Não foi possível ler o arquivo.'}${avisoG || ''}</span>`, true); }
 }
+document.addEventListener('click', e => { const b = e.target.closest('[data-repetir]'); if (b && ultimos[b.dataset.repetir]) processar(b.dataset.repetir, ultimos[b.dataset.repetir]); });
 document.querySelectorAll('[data-ler]').forEach(l => {
   const inp = l.querySelector('input[type=file]');
-  inp.addEventListener('change', () => { processar(l.dataset.ler, inp.files); inp.value = ''; });
+  inp.addEventListener('change', () => { processar(l.dataset.ler, [...inp.files]); inp.value = ''; });
   l.addEventListener('dragover', e => { e.preventDefault(); l.classList.add('arrastando'); });
   l.addEventListener('dragleave', () => l.classList.remove('arrastando'));
   l.addEventListener('drop', e => { e.preventDefault(); l.classList.remove('arrastando'); processar(l.dataset.ler, e.dataTransfer.files); });

@@ -97,20 +97,49 @@ function gemini_descobrir(string $base, string $chave, string $dica = ''): ?stri
     if (!$opc) return null;
     arsort($opc); return array_key_first($opc);
 }
+@set_time_limit(150);
+/** outros modelos flash da conta (os mais novos primeiro), para quando o principal está sobrecarregado */
+function gemini_alternativos(string $base, string $chave, string $atual): array
+{
+    $ch = curl_init(rtrim($base, '/') . '?pageSize=1000');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $chave]]);
+    $j = json_decode((string)curl_exec($ch), true); curl_close($ch);
+    $opc = [];
+    foreach ((array)($j['models'] ?? []) as $m) {
+        $n = preg_replace('#^models/#', '', (string)($m['name'] ?? ''));
+        if ($n === $atual || !in_array('generateContent', (array)($m['supportedGenerationMethods'] ?? []), true)) continue;
+        if (!preg_match('/^gemini-([\d.]+)-flash(-lite)?$/', $n, $v)) continue;
+        $opc[$n] = (float)$v[1] - (empty($v[2]) ? 0 : 0.05);   // o "lite" fica depois do normal da mesma versão
+    }
+    arsort($opc);
+    return array_slice(array_keys($opc), 0, 2);
+}
 $modelo = defined('GEMINI_MODELO') ? GEMINI_MODELO : (cfg('gemini_modelo') ?: 'gemini-3.8-flash');
 [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo);
+/* sobrecarga do Google (503/500): espera e tenta de novo; depois tenta outro modelo flash da conta */
+foreach ([2, 5] as $espera) {
+    if (!in_array($cod, [500, 503], true)) break;
+    sleep($espera); [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo);
+}
+if (in_array($cod, [500, 503], true)) {
+    foreach (gemini_alternativos($base, $chave, $modelo) as $alt) {
+        [$b2, $c2, $e2] = gemini_post($base, $alt, $chave, $corpo);
+        if ($c2 === 200) { [$bruto, $cod, $erroCurl, $modelo] = [$b2, $c2, $e2, $alt]; $reserva = true; break; }
+    }
+}
 if ($cod === 404 || ($cod === 400 && preg_match('/not (found|supported)|no longer available/i', (string)$bruto))) {
     preg_match('#use (?:models/)?(gemini-[\w.\-]+)#i', (string)(json_decode((string)$bruto, true)['error']['message'] ?? ''), $sug);
     $novo = gemini_descobrir($base, $chave, $sug[1] ?? '');
     if ($novo && $novo !== $modelo) { $modelo = $novo; [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo); }
 }
-if ($cod === 200) cfg_gravar('gemini_modelo', $modelo);
+if ($cod === 200 && empty($reserva)) cfg_gravar('gemini_modelo', $modelo);   // o modelo de reserva (sobrecarga) não fica gravado
 $falha = function (string $msg, int $cod = 502) use ($resp, $tipo) { cfg_gravar('gemini_ultimo_erro', date('d/m/Y H:i') . ' · ' . $tipo . ' · ' . mb_substr($msg, 0, 300)); $resp(['erro' => $msg], $cod); };
 if ($bruto === false) $falha('Não foi possível falar com o Gemini (' . $erroCurl . ').');
 $j = json_decode($bruto, true);
 if ($cod !== 200) {
     $msg = (string)($j['error']['message'] ?? 'sem detalhe');
-    if ($cod === 429) $falha('Limite gratuito do Gemini atingido por agora. Espere um pouco ou use a leitura no aparelho.');
+    if ($cod === 429) $falha('Limite gratuito do Gemini atingido por agora. Espere um minuto e clique em "Tentar de novo".');
+    if ($cod === 503 || $cod === 500) $falha('O Gemini está sobrecarregado agora (muita gente usando). Espere alguns segundos e clique em "Tentar de novo".');
     if ($cod === 400 && stripos($msg, 'API key') !== false || $cod === 403) $falha('A chave do Gemini foi recusada: confira GEMINI_API_KEY no config.php. (' . $msg . ')');
     $falha('O Gemini respondeu com erro ' . $cod . ': ' . $msg);
 }
