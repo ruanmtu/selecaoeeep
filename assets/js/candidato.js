@@ -57,31 +57,68 @@ function marcar(inp, v) { if (!v || inp.value.trim()) return false; inp.value = 
 function status(k, html, erro) { const s = document.querySelector(`[data-status="${k}"]`); s.hidden = !html; s.classList.toggle('erro', !!erro); s.innerHTML = html || ''; }
 function barra(k, txt) { status(k, `<i class="bi bi-hourglass-split"></i><span>${txt}</span><div class="progress"><div class="progress-bar" style="width:0%"></div></div>`); return p => { const b = document.querySelector(`[data-status="${k}"] .progress-bar`); if (b) b.style.width = Math.round(p * 100) + '%'; }; }
 
+function aplicarDoc(k, r) {
+  const achados = [];
+  for (const [campo, rot] of [['nome', 'nome'], ['cpf', 'CPF'], ['nascimento', 'nascimento'], ['mae', 'mãe'], ['pai', 'pai'], ['email', 'e-mail'], ['telefone', 'telefone'], ['endereco', 'endereço'], ['bairro', 'bairro'], ['cidade', 'cidade'], ['escola_origem', 'escola']]) {
+    const inp = $('#' + campo); if (inp && r[campo] && (campo !== 'cidade' || r[campo] !== inp.value) && marcar(inp, r[campo])) achados.push(rot);
+  }
+  if (r.cota_bairro) $('#cotaBairro').checked = true;
+  cpf.dispatchEvent(new Event('input')); conferirBairro();
+  return achados;
+}
+function aplicarNotas(k, r) {
+  const tab = k === 'h68' ? 't68' : 't9', nomeCampo = k === 'h68' ? 'd68[]' : 'd9[]';
+  let n = 0;
+  for (const [disc, vals] of Object.entries(r)) {
+    let tr = [...document.querySelectorAll(`#${tab} tbody tr`)].find(t => semAc(t.querySelector(`[name="${nomeCampo}"]`).value).trim() === semAc(disc).trim());
+    if (!tr) tr = novaLinha(tab, disc);
+    tr.querySelectorAll('.nota').forEach((inp, i) => { if (vals[i] !== null && vals[i] !== undefined) { inp.value = String(vals[i]).replace('.', ','); inp.classList.add('sl-lido'); setTimeout(() => inp.classList.remove('sl-lido'), 2500); n++; } });
+  }
+  media();
+  return [n, Object.keys(r).length];
+}
+/* foto grande -> JPEG de até 2000 px (envio mais rápido para o Gemini) */
+async function reduzir(f) {
+  if (!f.type.startsWith('image/') || f.size < 900 * 1024) return f;
+  try {
+    const bmp = await createImageBitmap(f), k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const b = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.88));
+    return b ? new File([b], 'foto.jpg', { type: 'image/jpeg' }) : f;
+  } catch (e) { return f; }
+}
+async function lerGemini(k, arquivos) {
+  const fd = new FormData(); fd.append('csrf', window.SEL_CSRF); fd.append('tipo', k);
+  for (const f of [...arquivos].slice(0, 6)) fd.append('arq[]', await reduzir(f));
+  const r = await fetch('ler.php', { method: 'POST', body: fd, credentials: 'same-origin' });
+  const j = await r.json().catch(() => ({ erro: 'Resposta inválida do servidor.' }));
+  if (!r.ok || !j.ok) throw new Error(j.erro || 'Não foi possível ler.');
+  return j;
+}
+function resultado(k, j) {
+  if (k === 'doc') {
+    const achados = aplicarDoc(k, j.dados || {});
+    const aviso = j.dados && j.dados.cpf_duvida ? ' <b>Atenção: o CPF lido não confere, verifique.</b>' : '';
+    status(k, achados.length ? `<i class="bi bi-check-circle"></i><span>Preenchido: <b>${achados.join(', ')}</b>. Confira os campos em amarelo.${aviso}</span>` : `<i class="bi bi-exclamation-triangle"></i><span>Não consegui ler os dados. Tente outra foto, bem de frente e com luz, ou digite.</span>`, !achados.length);
+  } else {
+    const [n, d] = aplicarNotas(k, j.notas || {});
+    status(k, n ? `<i class="bi bi-check-circle"></i><span><b>${n} notas</b> lidas em ${d} disciplinas. Confira com o documento antes de salvar.</span>` : `<i class="bi bi-exclamation-triangle"></i><span>Não achei as notas nesse arquivo. Tente uma foto mais de perto, bem reta, ou digite.</span>`, !n);
+  }
+}
 async function processar(k, arquivos) {
   if (!arquivos.length) return;
   if (k === 'doc') { const mini = document.querySelector('[data-mini="doc"]'); [...arquivos].forEach(f => { if (f.type.startsWith('image/')) { const i = document.createElement('img'); i.src = URL.createObjectURL(f); i.alt = ''; mini.appendChild(i); } else { const s = document.createElement('span'); s.textContent = 'PDF'; mini.appendChild(s); } }); }
-  const prog = barra(k, 'Lendo… na primeira vez demora um pouco mais');
+  if (window.SEL_GEMINI) {
+    status(k, `<span class="spinner-border spinner-border-sm"></span><span>Lendo com o Gemini…</span>`);
+    try { resultado(k, await lerGemini(k, arquivos)); return; }
+    catch (e) { status(k, `<i class="bi bi-arrow-repeat"></i><span>${e.message} Tentando a leitura no aparelho…</span>`); }
+  }
+  const prog = barra(k, 'Lendo neste aparelho… na primeira vez demora um pouco mais');
   try {
     const texto = await lerArquivos(arquivos, prog);
-    if (k === 'doc') {
-      const r = interpretarDocumento(texto, window.SEL_BAIRROS), achados = [];
-      for (const [campo, rot] of [['nome', 'nome'], ['cpf', 'CPF'], ['nascimento', 'nascimento'], ['mae', 'mãe'], ['pai', 'pai'], ['email', 'e-mail'], ['telefone', 'telefone'], ['endereco', 'endereço'], ['bairro', 'bairro'], ['cidade', 'cidade'], ['escola_origem', 'escola']]) {
-        const inp = $('#' + campo); if (inp && r[campo] && (campo !== 'cidade' || r[campo] !== inp.value) && marcar(inp, r[campo])) achados.push(rot);
-      }
-      if (r.cota_bairro) $('#cotaBairro').checked = true;
-      cpf.dispatchEvent(new Event('input')); conferirBairro();
-      status(k, achados.length ? `<i class="bi bi-check-circle"></i><span>Preenchido: <b>${achados.join(', ')}</b>. Confira os campos em amarelo.</span>` : `<i class="bi bi-exclamation-triangle"></i><span>Não consegui ler os dados. Tente outra foto, bem de frente e com luz, ou digite.</span>`, !achados.length);
-    } else {
-      const r = interpretarNotas(texto, k === 'h68' ? '68' : '9'), tab = k === 'h68' ? 't68' : 't9', nomeCampo = k === 'h68' ? 'd68[]' : 'd9[]';
-      let n = 0;
-      for (const [disc, vals] of Object.entries(r)) {
-        let tr = [...document.querySelectorAll(`#${tab} tbody tr`)].find(t => semAc(t.querySelector(`[name="${nomeCampo}"]`).value).trim() === semAc(disc).trim());
-        if (!tr) tr = novaLinha(tab, disc);
-        tr.querySelectorAll('.nota').forEach((inp, i) => { if (vals[i] !== null && vals[i] !== undefined) { inp.value = String(vals[i]).replace('.', ','); inp.classList.add('sl-lido'); setTimeout(() => inp.classList.remove('sl-lido'), 2500); n++; } });
-      }
-      media();
-      status(k, n ? `<i class="bi bi-check-circle"></i><span><b>${n} notas</b> lidas em ${Object.keys(r).length} disciplinas. Confira com o documento antes de salvar.</span>` : `<i class="bi bi-exclamation-triangle"></i><span>Não achei as notas nessa imagem. Tente uma foto mais de perto, bem reta, ou digite.</span>`, !n);
-    }
+    if (k === 'doc') resultado(k, { dados: interpretarDocumento(texto, window.SEL_BAIRROS) });
+    else resultado(k, { notas: interpretarNotas(texto, k === 'h68' ? '68' : '9') });
   } catch (e) { status(k, `<i class="bi bi-x-octagon"></i><span>${e.message || 'Não foi possível ler o arquivo.'}</span>`, true); }
 }
 document.querySelectorAll('[data-ler]').forEach(l => {

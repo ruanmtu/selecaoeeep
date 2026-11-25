@@ -19,6 +19,7 @@ if (eh_post()) {
     cfg_gravar('bairros', json_encode($bairros, JSON_UNESCAPED_UNICODE));
     cfg_gravar('desempate', array_key_exists($_POST['desempate'] ?? '', sel_desempates()) ? $_POST['desempate'] : 'idade');
     cfg_gravar('sobra_ampla', !empty($_POST['sobra_ampla']) ? '1' : '0');
+    cfg_gravar('leitura', !empty($_POST['gemini']) ? 'gemini' : 'aparelho');
     registrar('configurou');
     flash('ok', 'Configurações salvas.');
     redirecionar('configuracoes.php');
@@ -43,6 +44,15 @@ require __DIR__ . '/includes/topo.php';
     <div class="sl-card-corpo"><label class="form-label" for="bairros">Bairros que entram na cota <small class="text-secondary">(um por linha)</small></label>
         <textarea class="form-control" id="bairros" name="bairros" rows="4"><?= e(implode("\n", sel_bairros())) ?></textarea>
         <p class="small text-secondary mt-2 mb-0">Quando o endereço ou o bairro do candidato tem um desses nomes, a cota de bairro é marcada sozinha (dá para desmarcar).</p></div></div>
+<div class="sl-card"><div class="sl-card-cab"><h2><i class="bi bi-stars"></i>Leitura dos documentos</h2></div>
+    <div class="sl-card-corpo">
+        <?php if (gemini_configurado()): ?>
+        <label class="form-check"><input class="form-check-input" type="checkbox" name="gemini" value="1"<?= cfg('leitura', 'gemini') === 'gemini' ? ' checked' : '' ?>> <span class="form-check-label"><b>Ler fotos e PDFs com o Gemini (Google)</b> · lê melhor tabelas de notas e fotos difíceis. Se falhar ou passar do limite gratuito, o sistema usa a leitura no aparelho.</span></label>
+        <p class="small text-secondary mt-2 mb-0">A chave usada é a do plano gratuito: o Google pode usar as imagens enviadas para melhorar os serviços dele. Use só com a autorização dos responsáveis.</p>
+        <?php else: ?>
+        <p class="mb-0 text-secondary">A leitura é feita no aparelho. Para usar o Gemini, coloque <code>define('GEMINI_API_KEY', '...');</code> no <code>includes/config.php</code> do servidor.</p>
+        <?php endif; ?>
+    </div></div>
 <div class="sl-card"><div class="sl-card-cab"><h2><i class="bi bi-sort-down"></i>Classificação</h2></div>
     <div class="sl-card-corpo vstack gap-3">
         <div style="max-width:420px"><label class="form-label" for="desempate">Desempate (médias iguais)</label><select class="form-select" id="desempate" name="desempate"><?php foreach (sel_desempates() as $k => $r): ?><option value="<?= $k ?>"<?= cfg('desempate', 'idade') === $k ? ' selected' : '' ?>><?= e($r) ?></option><?php endforeach; ?></select></div>

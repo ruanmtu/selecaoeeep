@@ -98,7 +98,7 @@ require __DIR__ . '/includes/topo.php';
                     <i class="bi bi-camera"></i><b>Foto do documento</b><small>RG, certidão, comprovante de endereço… pode mandar várias fotos ou PDF</small></label>
                 <div class="sl-miniaturas" data-mini="doc"></div>
                 <div class="sl-ler" data-status="doc" hidden></div>
-                <p class="small text-secondary mt-2 mb-0"><i class="bi bi-shield-lock me-1"></i>A leitura é feita neste aparelho. A foto não é enviada nem guardada.</p>
+                <p class="small text-secondary mt-2 mb-0"><i class="bi bi-<?= gemini_ativo() ? 'stars' : 'shield-lock' ?> me-1"></i><?= gemini_ativo() ? 'A leitura é feita pelo Gemini (Google). A foto não fica guardada no sistema.' : 'A leitura é feita neste aparelho. A foto não é enviada nem guardada.' ?></p>
             </div>
             <div class="col-lg-8">
                 <div class="row g-2">
@@ -177,5 +177,5 @@ require __DIR__ . '/includes/topo.php';
 </div>
 </form>
 <?php
-$scripts = '<script>window.SEL_BAIRROS = ' . json_encode(sel_bairros(), JSON_UNESCAPED_UNICODE) . ';</script><script type="module" src="assets/js/candidato.js?v=' . SEL_VERSAO . '"></script>';
+$scripts = '<script>window.SEL_BAIRROS = ' . json_encode(sel_bairros(), JSON_UNESCAPED_UNICODE) . '; window.SEL_GEMINI = ' . (gemini_ativo() ? 'true' : 'false') . '; window.SEL_CSRF = ' . json_encode(csrf_token()) . ';</script><script type="module" src="assets/js/candidato.js?v=' . SEL_VERSAO . '"></script>';
 require __DIR__ . '/includes/rodape.php';

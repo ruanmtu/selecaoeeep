@@ -229,3 +229,7 @@ function sel_classificar(string $curso): array
     $esp = 0; foreach ($lista as &$x) if ($x['vaga'] === null) $x['espera'] = ++$esp; unset($x);
     return ['lista' => $lista, 'vagas' => ['total' => $total, 'ampla' => $vampla, 'pcd' => $vpcd, 'bairro' => $vbairro], 'usados' => $usados, 'extra' => $extra];
 }
+
+/* ---------- leitura com o Gemini (opcional: precisa de GEMINI_API_KEY no config.php) ---------- */
+function gemini_configurado(): bool { return defined('GEMINI_API_KEY') && strlen((string)GEMINI_API_KEY) > 20; }
+function gemini_ativo(): bool { return gemini_configurado() && cfg('leitura', 'gemini') === 'gemini' && function_exists('curl_init'); }
