@@ -129,6 +129,17 @@ function gemini_alternativos(string $base, string $chave, string $atual): array
     arsort($opc);
     return array_slice(array_keys($opc), 0, 2);
 }
+/** lê o erro 429 do Google: qual limite estourou (por minuto ou por dia) e quanto tempo esperar */
+function gemini_cota(string $bruto): array
+{
+    $j = json_decode($bruto, true); $dia = false; $espera = 0.0; $lim = '';
+    foreach ((array)($j['error']['details'] ?? []) as $d) {
+        if (isset($d['retryDelay'])) $espera = (float)rtrim((string)$d['retryDelay'], 's');
+        foreach ((array)($d['violations'] ?? []) as $v) { $q = (string)($v['quotaId'] ?? ''); $lim = $q; if (stripos($q, 'PerDay') !== false) $dia = true; }
+    }
+    if (!$espera && preg_match('/retry in ([\d.]+)s/i', (string)($j['error']['message'] ?? ''), $m)) $espera = (float)$m[1];
+    return ['dia' => $dia, 'espera' => $espera, 'limite' => $lim];
+}
 $modelo = defined('GEMINI_MODELO') ? GEMINI_MODELO : (cfg('gemini_modelo') ?: 'gemini-3.8-flash');
 [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo);
 /* sobrecarga do Google (503/500): espera e tenta de novo; depois tenta outro modelo flash da conta */
@@ -136,7 +147,11 @@ foreach ([1] as $espera) {
     if (!in_array($cod, [500, 503], true)) break;
     sleep($espera); [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo);
 }
-if (in_array($cod, [500, 503], true)) {
+/* limite por minuto do plano gratuito (429): cada modelo tem a sua cota; se a espera pedida for curta, espera;
+   senão usa outro modelo flash da conta, que tem cota separada */
+$cota = $cod === 429 ? gemini_cota((string)$bruto) : null;
+if ($cota && !$cota['dia'] && $cota['espera'] > 0 && $cota['espera'] <= 6) { sleep((int)ceil($cota['espera'])); [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo); }
+if (in_array($cod, [429, 500, 503], true)) {
     foreach (gemini_alternativos($base, $chave, $modelo) as $alt) {
         [$b2, $c2, $e2] = gemini_post($base, $alt, $chave, $corpo);
         if ($c2 === 200) { [$bruto, $cod, $erroCurl, $modelo] = [$b2, $c2, $e2, $alt]; $reserva = true; break; }
@@ -153,7 +168,11 @@ if ($bruto === false) $falha('Não foi possível falar com o Gemini (' . $erroCu
 $j = json_decode($bruto, true);
 if ($cod !== 200) {
     $msg = (string)($j['error']['message'] ?? 'sem detalhe');
-    if ($cod === 429) $falha('Limite gratuito do Gemini atingido por agora. Espere um minuto e clique em "Tentar de novo".');
+    if ($cod === 429) {
+        $c4 = gemini_cota((string)$bruto);
+        $falha($c4['dia'] ? 'A cota diária gratuita do Gemini acabou nos modelos disponíveis. Ela volta de madrugada (por volta das 5h). Até lá, use a leitura no aparelho ou digite.'
+            : 'Limite por minuto do Gemini gratuito atingido (muitas leituras seguidas). ' . ($c4['espera'] ? 'Espere uns ' . (int)ceil($c4['espera']) . ' segundos' : 'Espere um minuto') . ' e clique em "Tentar de novo".');
+    }
     if ($cod === 503 || $cod === 500) $falha('O Gemini está sobrecarregado agora (muita gente usando). Espere alguns segundos e clique em "Tentar de novo".');
     if ($cod === 400 && stripos($msg, 'API key') !== false || $cod === 403) $falha('A chave do Gemini foi recusada: confira GEMINI_API_KEY no config.php. (' . $msg . ')');
     $falha('O Gemini respondeu com erro ' . $cod . ': ' . $msg);
