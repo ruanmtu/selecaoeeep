@@ -3,6 +3,7 @@
  * em JSON e devolve para o formulário. Nada é gravado aqui: nem a imagem, nem o texto lido. */
 require __DIR__ . '/includes/base.php';
 header('Content-Type: application/json; charset=utf-8');
+$INICIO = microtime(true);
 $u = usuario();
 $resp = function (array $x, int $cod = 200) { http_response_code($cod); echo json_encode($x, JSON_UNESCAPED_UNICODE); exit; };
 if (!$u) $resp(['erro' => 'Sua sessão expirou. Entre de novo.'], 401);
@@ -28,9 +29,14 @@ function tipo_arquivo(string $tmp): string
 
 $partes = [];
 if ($tipo !== 'teste') {
-    $total = 0; $f = $_FILES['arq'] ?? null;
-    if (!$f || !is_array($f['name'])) $resp(['erro' => 'Nenhum arquivo chegou ao servidor (pode ser grande demais).'], 400);
-    foreach ($f['name'] as $i => $nome) {
+    $total = 0; $f = $_FILES['arq'] ?? ['name' => []];
+    /* PDF com texto: o celular já manda o TEXTO do PDF (muito mais rápido e exato que a imagem) */
+    foreach ((array)($_POST['texto'] ?? []) as $tx) {
+        $tx = trim(mb_substr((string)$tx, 0, 60000));
+        if ($tx !== '') $partes[] = ['text' => "Texto do documento:\n" . $tx];
+    }
+    if (!$partes && empty($f['name'])) $resp(['erro' => 'Nenhum arquivo chegou ao servidor (pode ser grande demais).'], 400);
+    foreach ((array)$f['name'] as $i => $nome) {
         if ($i >= 6) break;
         if (($f['error'][$i] ?? 1) !== UPLOAD_ERR_OK) $resp(['erro' => 'O arquivo "' . $nome . '" não chegou inteiro (erro ' . (int)$f['error'][$i] . '). Tente uma foto menor.'], 400);
         $tmp = $f['tmp_name'][$i]; $mime = tipo_arquivo($tmp);
@@ -65,7 +71,9 @@ $cfgs = [
 $corpo = json_encode([
     'system_instruction' => ['parts' => [['text' => $instr]]],
     'contents' => [['role' => 'user', 'parts' => array_merge($partes, [['text' => $tipo === 'teste' ? 'Devolva {"ok":"sim"}.' : 'Extraia os dados destes arquivos.']])]],
-    'generationConfig' => ['responseMimeType' => 'application/json', 'responseSchema' => $schema, 'thinkingConfig' => ['thinkingLevel' => 'minimal'], 'mediaResolution' => 'MEDIA_RESOLUTION_MEDIUM'],
+    'generationConfig' => ['responseMimeType' => 'application/json', 'responseSchema' => $schema,
+        'thinkingConfig' => ['thinkingLevel' => in_array($tipo, ['doc', 'teste'], true) ? 'minimal' : 'low'],
+        'mediaResolution' => $tipo === 'doc' ? 'MEDIA_RESOLUTION_MEDIUM' : 'MEDIA_RESOLUTION_HIGH'],
 ]);
 unset($partes);
 
@@ -124,6 +132,7 @@ function gemini_alternativos(string $base, string $chave, string $atual): array
         $n = preg_replace('#^models/#', '', (string)($m['name'] ?? ''));
         if ($n === $atual || !in_array('generateContent', (array)($m['supportedGenerationMethods'] ?? []), true)) continue;
         if (!preg_match('/^gemini-([\d.]+)-flash(-lite)?$/', $n, $v)) continue;
+        if (!empty($v[2]) && ($GLOBALS['tipo'] ?? '') !== 'doc') continue;   // "lite" erra mais em comprovante e histórico
         $opc[$n] = (float)$v[1] - (empty($v[2]) ? 0 : 0.05);   // o "lite" fica depois do normal da mesma versão
     }
     arsort($opc);
@@ -217,4 +226,4 @@ foreach ((array)($dados['disciplinas'] ?? []) as $d) {
     $nome = trim((string)($d['nome'] ?? '')); if ($nome === '') continue;
     $notas[$nome] = $tipo === 'h68' ? [$n($d['n6'] ?? null), $n($d['n7'] ?? null), $n($d['n8'] ?? null)] : [$n($d['b1'] ?? null), $n($d['b2'] ?? null), $n($d['b3'] ?? null), $n($d['b4'] ?? null)];
 }
-$resp(['ok' => true, 'motor' => 'gemini', 'dados' => $r, 'notas' => $notas]);
+$resp(['ok' => true, 'motor' => 'gemini', 'modelo' => $modelo, 'segundos' => round(microtime(true) - $INICIO, 1), 'dados' => $r, 'notas' => $notas]);

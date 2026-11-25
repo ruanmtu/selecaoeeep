@@ -1,5 +1,5 @@
 /* Tela do candidato: leitura dos documentos, tabela de notas e média ao vivo */
-import { lerArquivos, interpretarDocumento, interpretarNotas } from './leitura.js';
+import { lerArquivos, interpretarDocumento, interpretarNotas, textoPdf } from './leitura.js';
 const $ = s => document.querySelector(s);
 const num = v => { v = String(v).trim().replace(',', '.'); if (v === '' || isNaN(v)) return null; let n = parseFloat(v); if (n > 10 && n <= 100) n /= 10; return n >= 0 && n <= 10 ? n : NaN; };
 const br = (v, c = 2) => v === null || isNaN(v) ? '—' : v.toFixed(c).replace('.', ',');
@@ -53,18 +53,19 @@ function conferirBairro() {
 ['bairro', 'endereco'].forEach(k => $('#' + k).addEventListener('change', conferirBairro));
 
 /* ---------- leitura dos arquivos ---------- */
-function marcar(inp, v) { if (!v || inp.value.trim()) return false; inp.value = inp.classList.contains('maiusc') ? String(v).toUpperCase() : v; inp.classList.add('sl-lido'); setTimeout(() => inp.classList.remove('sl-lido'), 2500); return true; }
+function marcar(inp, v, forcar = false) { if (!v || (!forcar && inp.value.trim())) return false; inp.value = inp.classList.contains('maiusc') ? String(v).toUpperCase() : v; inp.classList.add('sl-lido'); setTimeout(() => inp.classList.remove('sl-lido'), 2500); return true; }
 function status(k, html, erro) { const s = document.querySelector(`[data-status="${k}"]`); s.hidden = !html; s.classList.toggle('erro', !!erro); s.innerHTML = html || ''; }
 function barra(k, txt) { status(k, `<i class="bi bi-hourglass-split"></i><span>${txt}</span><div class="progress"><div class="progress-bar" style="width:0%"></div></div>`); return p => { const b = document.querySelector(`[data-status="${k}"] .progress-bar`); if (b) b.style.width = Math.round(p * 100) + '%'; }; }
 
 const CAMPOS = [['nome', 'nome'], ['cpf', 'CPF'], ['nascimento', 'nascimento'], ['sexo', 'sexo'], ['mae', 'mãe'], ['pai', 'pai'], ['naturalidade', 'naturalidade'],
   ['titular', 'titular'], ['telefone', 'telefone'], ['endereco', 'endereço'], ['cep', 'CEP'], ['bairro', 'bairro'], ['cidade', 'cidade'], ['email', 'e-mail'], ['escola_origem', 'escola']];
+const DO_TIPO = { doc: ['nome', 'cpf', 'nascimento', 'sexo', 'mae', 'pai', 'naturalidade'], end: ['titular', 'telefone', 'endereco', 'cep', 'bairro', 'cidade'], h68: ['email', 'escola_origem'], h9: ['email'] };
 function aplicarDoc(k, r) {
-  const achados = [];
+  const achados = [], meus = DO_TIPO[k] || [];   // os campos da própria parte são trocados pela leitura nova
   for (const [campo, rot] of CAMPOS) {
     const inp = $('#' + campo); if (!inp || !r[campo]) continue;
     if (campo === 'cidade' && /^boa viagem$/i.test(inp.value)) inp.value = '';
-    if (marcar(inp, r[campo])) achados.push(rot);
+    if (marcar(inp, r[campo], meus.includes(campo))) achados.push(rot);
   }
   if (r.cota_bairro) $('#cotaBairro').checked = true;
   cpf.dispatchEvent(new Event('input')); conferirBairro();
@@ -83,10 +84,10 @@ function aplicarNotas(k, r) {
   return [n, Object.keys(r).length];
 }
 /* foto grande -> JPEG de até 2000 px (envio mais rápido para o Gemini) */
-async function reduzir(f) {
+async function reduzir(f, lado = 1600) {
   if (!f.type.startsWith('image/') || f.size < 350 * 1024) return f;
   try {
-    const bmp = await createImageBitmap(f), k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const bmp = await createImageBitmap(f), k = Math.min(1, lado / Math.max(bmp.width, bmp.height));
     const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
     c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
     const b = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.82));
@@ -95,14 +96,17 @@ async function reduzir(f) {
 }
 async function lerGemini(k, arquivos) {
   const fd = new FormData(); fd.append('csrf', window.SEL_CSRF); fd.append('tipo', k);
-  for (const f of [...arquivos].slice(0, 6)) fd.append('arq[]', await reduzir(f));
+  for (const f of [...arquivos].slice(0, 6)) {
+    if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) { const t = await textoPdf(f); if (t) { fd.append('texto[]', t); continue; } }   // PDF com texto: manda só o texto
+    fd.append('arq[]', await reduzir(f, k === 'doc' ? 1600 : 2200));
+  }
   const r = await fetch('ler.php', { method: 'POST', body: fd, credentials: 'same-origin' });
   const j = await r.json().catch(() => ({ erro: 'Resposta inválida do servidor.' }));
   if (!r.ok || !j.ok) throw new Error(j.erro || 'Não foi possível ler.');
   return j;
 }
 function resultado(k, j, aviso = '') {
-  const motor = j.motor === 'gemini' ? ' <span class="sl-selo ok">Gemini</span>' : ' <span class="sl-selo">aparelho</span>';
+  const motor = j.motor === 'gemini' ? ` <span class="sl-selo ok">Gemini${j.segundos ? ' · ' + String(j.segundos).replace('.', ',') + ' s' : ''}</span>` : ' <span class="sl-selo">aparelho</span>';
   const achados = aplicarDoc(k, j.dados || {});
   if (k === 'doc' || k === 'end') {
     const dup = j.dados && j.dados.cpf_duvida ? ' <b>Atenção: o CPF lido não confere, verifique.</b>' : '';
@@ -121,8 +125,14 @@ async function processar(k, arquivos) {
   if (window.SEL_GEMINI) {
     status(k, `<span class="spinner-border spinner-border-sm"></span><span>Lendo com o Gemini…</span>`);
     try { resultado(k, await lerGemini(k, arquivos)); return; }
-    catch (e) { avisoG = ` <br><small class="text-danger">Gemini não leu: ${e.message}</small> <button type="button" class="btn btn-sm btn-light mt-1" data-repetir="${k}"><i class="bi bi-arrow-repeat me-1"></i>Tentar de novo com o Gemini</button>`; }
+    catch (e) {   /* não preenche nada sozinho com a leitura do aparelho (ela erra muito): o usuário escolhe */
+      status(k, `<i class="bi bi-exclamation-triangle"></i><span>Gemini não leu: ${e.message}<br><button type="button" class="btn btn-sm btn-primary mt-2 me-1" data-repetir="${k}"><i class="bi bi-arrow-repeat me-1"></i>Tentar de novo com o Gemini</button><button type="button" class="btn btn-sm btn-light mt-2" data-local="${k}"><i class="bi bi-phone me-1"></i>Ler neste aparelho</button></span>`, true);
+      return;
+    }
   }
+  return lerLocal(k, arquivos, avisoG);
+}
+async function lerLocal(k, arquivos, avisoG = '') {
   const prog = barra(k, 'Lendo neste aparelho… na primeira vez demora um pouco mais');
   try {
     const texto = await lerArquivos(arquivos, prog);
@@ -130,7 +140,10 @@ async function processar(k, arquivos) {
     else resultado(k, { dados: interpretarDocumento(texto, []), notas: interpretarNotas(texto, k === 'h68' ? '68' : '9') }, avisoG || '');
   } catch (e) { status(k, `<i class="bi bi-x-octagon"></i><span>${e.message || 'Não foi possível ler o arquivo.'}${avisoG || ''}</span>`, true); }
 }
-document.addEventListener('click', e => { const b = e.target.closest('[data-repetir]'); if (b && ultimos[b.dataset.repetir]) processar(b.dataset.repetir, ultimos[b.dataset.repetir]); });
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-repetir]'); if (b && ultimos[b.dataset.repetir]) processar(b.dataset.repetir, ultimos[b.dataset.repetir]);
+  const l = e.target.closest('[data-local]'); if (l && ultimos[l.dataset.local]) lerLocal(l.dataset.local, ultimos[l.dataset.local]);
+});
 document.querySelectorAll('[data-ler]').forEach(l => {
   const inp = l.querySelector('input[type=file]');
   inp.addEventListener('change', () => { processar(l.dataset.ler, [...inp.files]); inp.value = ''; });

@@ -64,6 +64,19 @@ async function lerImagem(arquivo, progresso) {
     return await ocr(preparar(img, img.naturalWidth, img.naturalHeight), progresso);
   } finally { URL.revokeObjectURL(url); }
 }
+/** só o texto de um PDF (sem OCR); vazio se o PDF for escaneado */
+export async function textoPdf(arquivo) {
+  try {
+    const doc = await pdfjs.getDocument({ data: await arquivo.arrayBuffer(), cMapUrl: base + 'cmaps/', cMapPacked: true, isEvalSupported: false }).promise;
+    let t = '';
+    for (let n = 1; n <= Math.min(doc.numPages, 4); n++) {
+      const tc = await (await doc.getPage(n)).getTextContent(), linhas = new Map();
+      tc.items.forEach(it => { if (!it.str.trim()) return; const y = Math.round(it.transform[5] / 3) * 3; (linhas.get(y) || linhas.set(y, []).get(y)).push([it.transform[4], it.str]); });
+      t += [...linhas.entries()].sort((a, b) => b[0] - a[0]).map(([, l]) => l.sort((a, b) => a[0] - b[0]).map(x => x[1]).join('  ')).join('\n') + '\n';
+    }
+    return t.replace(/\s/g, '').length > 80 ? t : '';
+  } catch (e) { return ''; }
+}
 export async function lerArquivos(arquivos, progresso) {
   let tudo = '';
   const lista = [...arquivos];
