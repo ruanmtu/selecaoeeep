@@ -50,6 +50,12 @@ require __DIR__ . '/includes/topo.php';
         <label class="form-check"><input class="form-check-input" type="checkbox" name="gemini" value="1"<?= cfg('leitura', 'gemini') === 'gemini' ? ' checked' : '' ?>> <span class="form-check-label"><b>Ler fotos e PDFs com o Gemini (Google)</b> · lê melhor tabelas de notas e fotos difíceis. Se falhar ou passar do limite gratuito, o sistema usa a leitura no aparelho.</span></label>
         <p class="small text-secondary mt-2 mb-0">A chave usada é a do plano gratuito: o Google pode usar as imagens enviadas para melhorar os serviços dele. Use só com a autorização dos responsáveis.</p>
         <div class="d-flex align-items-center gap-2 flex-wrap mt-3"><button class="btn btn-light btn-sm" type="button" id="testarGemini"><i class="bi bi-plug me-1"></i>Testar a conexão com o Gemini</button><span id="resGemini" class="small"></span></div>
+        <?php $gh = json_decode((string)cfg('gemini_historico'), true) ?: []; if ($gh): $nomes = ['doc' => 'documento', 'end' => 'comprovante', 'h68' => 'histórico', 'h9' => '9º ano', 'teste' => 'teste']; ?>
+        <details class="mt-3"><summary class="small fw-bold">Últimas leituras com o Gemini</summary>
+            <table class="sl-tab mt-2 small"><thead><tr><th>Quando</th><th>Leitura</th><th>Modelo</th><th>Resposta</th><th class="num">Tempo</th></tr></thead><tbody>
+            <?php foreach ($gh as [$q, $tp, $md, $cd, $sg]): ?><tr><td><?= e($q) ?></td><td><?= e($nomes[$tp] ?? $tp) ?></td><td><?= e($md) ?></td><td><?= $cd === 200 ? '<span class="sl-selo ok">ok</span>' : '<span class="sl-selo fora">erro ' . (int)$cd . '</span>' ?></td><td class="num"><?= nota_fmt($sg, 1) ?> s</td></tr><?php endforeach; ?>
+            </tbody></table></details>
+        <?php endif; ?>
         <?php if ($ue = cfg('gemini_ultimo_erro')): ?><p class="small text-danger mt-2 mb-0"><i class="bi bi-exclamation-triangle me-1"></i>Último erro do Gemini: <?= e($ue) ?></p><?php endif; ?>
         <?php else: ?>
         <p class="mb-0 text-secondary">A leitura é feita no aparelho. Para usar o Gemini, coloque <code>define('GEMINI_API_KEY', '...');</code> no <code>includes/config.php</code> do servidor.</p>

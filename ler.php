@@ -65,7 +65,7 @@ $cfgs = [
 $corpo = json_encode([
     'system_instruction' => ['parts' => [['text' => $instr]]],
     'contents' => [['role' => 'user', 'parts' => array_merge($partes, [['text' => $tipo === 'teste' ? 'Devolva {"ok":"sim"}.' : 'Extraia os dados destes arquivos.']])]],
-    'generationConfig' => ['temperature' => 0, 'responseMimeType' => 'application/json', 'responseSchema' => $schema],
+    'generationConfig' => ['responseMimeType' => 'application/json', 'responseSchema' => $schema, 'thinkingConfig' => ['thinkingLevel' => 'low']],
 ]);
 unset($partes);
 
@@ -73,12 +73,25 @@ unset($partes);
    O Google aposenta modelos de tempos em tempos: se o modelo sumir, o sistema descobre outro sozinho. */
 $base = defined('GEMINI_URL') ? GEMINI_URL : 'https://generativelanguage.googleapis.com/v1beta/models/';
 $chave = trim((string)GEMINI_API_KEY);
+/** últimas chamadas (só modelo, resposta e tempo; nenhum dado do candidato) */
+function gemini_historico(string $modelo, int $cod, float $seg): void
+{
+    $h = json_decode((string)cfg('gemini_historico'), true) ?: [];
+    array_unshift($h, [date('d/m H:i:s'), $GLOBALS['tipo'] ?? '', $modelo, $cod, round($seg, 1)]);
+    cfg_gravar('gemini_historico', json_encode(array_slice($h, 0, 15)));
+}
 function gemini_post(string $base, string $modelo, string $chave, string $corpo): array
 {
     $ch = curl_init($base . rawurlencode($modelo) . ':generateContent');
     curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $corpo, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 100, CURLOPT_CONNECTTIMEOUT => 12,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'x-goog-api-key: ' . $chave]]);
+    $t0 = microtime(true);
     $b = curl_exec($ch); $c = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $e = curl_error($ch); curl_close($ch);
+    if ($c === 400 && preg_match('/thinking/i', (string)$b) && str_contains($corpo, 'thinkingConfig')) {   // modelo sem suporte: sem o ajuste
+        $j = json_decode($corpo, true); unset($j['generationConfig']['thinkingConfig']);
+        return gemini_post($base, $modelo, $chave, json_encode($j));
+    }
+    gemini_historico($modelo, $c, microtime(true) - $t0);
     return [$b, $c, $e];
 }
 function gemini_descobrir(string $base, string $chave, string $dica = ''): ?string
