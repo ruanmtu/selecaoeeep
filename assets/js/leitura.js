@@ -111,6 +111,7 @@ export function interpretarDocumento(texto, bairrosCota) {
     if (!r.cidade && /\b(CIDADE|MUNICIPIO)\b/.test(l)) { const c = linhas[i].replace(/^.*?(cidade|munic[íi]pio)\s*[:\-]?\s*/i, '').split(/\s{2,}|UF|\-/)[0].trim(); if (c.length > 2) r.cidade = c; }
     if (!r.escola_origem && /\b(ESCOLA|E\.?E\.?F|EMEF|COLEGIO|E\.?M\.?E\.?F)\b/.test(l) && !/VENCESLAU|PROFISSIONAL/.test(l)) r.escola_origem = linhas[i].replace(/^.*?(escola|col[ée]gio)\b/i, m => m.match(/(escola|col[ée]gio)/i)[0]).trim();
   });
+  const sx = norm(texto).match(/SEXO\s*[:\-]?\s*(F|M)\b/); if (sx) r.sexo = sx[1] === 'F' ? 'Feminino' : 'Masculino';
   if (r.nome) r.nome = titulo(r.nome); if (r.pai) r.pai = titulo(r.pai); if (r.mae) r.mae = titulo(r.mae);
   if (!r.nome) { const c = linhas.find(l => ehNome(l) && l === l.toUpperCase() && l.split(' ').length >= 3); if (c) r.nome = titulo(limpaNome(c)); }
   // bairro da cota: procura os bairros no texto inteiro

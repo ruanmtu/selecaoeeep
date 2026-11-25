@@ -49,6 +49,8 @@ require __DIR__ . '/includes/topo.php';
         <?php if (gemini_configurado()): ?>
         <label class="form-check"><input class="form-check-input" type="checkbox" name="gemini" value="1"<?= cfg('leitura', 'gemini') === 'gemini' ? ' checked' : '' ?>> <span class="form-check-label"><b>Ler fotos e PDFs com o Gemini (Google)</b> · lê melhor tabelas de notas e fotos difíceis. Se falhar ou passar do limite gratuito, o sistema usa a leitura no aparelho.</span></label>
         <p class="small text-secondary mt-2 mb-0">A chave usada é a do plano gratuito: o Google pode usar as imagens enviadas para melhorar os serviços dele. Use só com a autorização dos responsáveis.</p>
+        <div class="d-flex align-items-center gap-2 flex-wrap mt-3"><button class="btn btn-light btn-sm" type="button" id="testarGemini"><i class="bi bi-plug me-1"></i>Testar a conexão com o Gemini</button><span id="resGemini" class="small"></span></div>
+        <?php if ($ue = cfg('gemini_ultimo_erro')): ?><p class="small text-danger mt-2 mb-0"><i class="bi bi-exclamation-triangle me-1"></i>Último erro do Gemini: <?= e($ue) ?></p><?php endif; ?>
         <?php else: ?>
         <p class="mb-0 text-secondary">A leitura é feita no aparelho. Para usar o Gemini, coloque <code>define('GEMINI_API_KEY', '...');</code> no <code>includes/config.php</code> do servidor.</p>
         <?php endif; ?>
@@ -60,5 +62,15 @@ require __DIR__ . '/includes/topo.php';
     </div></div>
 <div class="sl-salvar"><button class="btn btn-primary px-4"><i class="bi bi-check2 me-1"></i>Salvar configurações</button></div>
 </form>
+<script>
+const tg = document.getElementById('testarGemini');
+if (tg) tg.addEventListener('click', async () => {
+  const r = document.getElementById('resGemini'); r.className = 'small'; r.textContent = 'Testando…';
+  const fd = new FormData(); fd.append('csrf', <?= json_encode(csrf_token()) ?>); fd.append('tipo', 'teste');
+  try { const x = await fetch('ler.php', { method: 'POST', body: fd }); const j = await x.json();
+    if (j.ok) { r.className = 'small text-success fw-bold'; r.textContent = 'Funcionando (' + j.modelo + ').'; } else { r.className = 'small text-danger'; r.textContent = j.erro; }
+  } catch (e) { r.className = 'small text-danger'; r.textContent = 'Falhou: ' + e.message; }
+});
+</script>
 <script>document.getElementById('tCursos').addEventListener('input',e=>{const r=e.target.closest('tr'),v=[...r.querySelectorAll('input[type=number]')].map(i=>+i.value||0);r.querySelector('.amp').textContent=v[0]-v[1]-v[2];});</script>
 <?php require __DIR__ . '/includes/rodape.php';

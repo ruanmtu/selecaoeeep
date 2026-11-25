@@ -57,13 +57,18 @@ function marcar(inp, v) { if (!v || inp.value.trim()) return false; inp.value = 
 function status(k, html, erro) { const s = document.querySelector(`[data-status="${k}"]`); s.hidden = !html; s.classList.toggle('erro', !!erro); s.innerHTML = html || ''; }
 function barra(k, txt) { status(k, `<i class="bi bi-hourglass-split"></i><span>${txt}</span><div class="progress"><div class="progress-bar" style="width:0%"></div></div>`); return p => { const b = document.querySelector(`[data-status="${k}"] .progress-bar`); if (b) b.style.width = Math.round(p * 100) + '%'; }; }
 
+const CAMPOS = [['nome', 'nome'], ['cpf', 'CPF'], ['nascimento', 'nascimento'], ['sexo', 'sexo'], ['mae', 'mãe'], ['pai', 'pai'], ['naturalidade', 'naturalidade'],
+  ['titular', 'titular'], ['telefone', 'telefone'], ['endereco', 'endereço'], ['cep', 'CEP'], ['bairro', 'bairro'], ['cidade', 'cidade'], ['email', 'e-mail'], ['escola_origem', 'escola']];
 function aplicarDoc(k, r) {
   const achados = [];
-  for (const [campo, rot] of [['nome', 'nome'], ['cpf', 'CPF'], ['nascimento', 'nascimento'], ['mae', 'mãe'], ['pai', 'pai'], ['email', 'e-mail'], ['telefone', 'telefone'], ['endereco', 'endereço'], ['bairro', 'bairro'], ['cidade', 'cidade'], ['escola_origem', 'escola']]) {
-    const inp = $('#' + campo); if (inp && r[campo] && (campo !== 'cidade' || r[campo] !== inp.value) && marcar(inp, r[campo])) achados.push(rot);
+  for (const [campo, rot] of CAMPOS) {
+    const inp = $('#' + campo); if (!inp || !r[campo]) continue;
+    if (campo === 'cidade' && inp.value === 'Boa Viagem') inp.value = '';
+    if (marcar(inp, r[campo])) achados.push(rot);
   }
   if (r.cota_bairro) $('#cotaBairro').checked = true;
   cpf.dispatchEvent(new Event('input')); conferirBairro();
+  if ($('#cidade') && !$('#cidade').value) $('#cidade').value = 'Boa Viagem';
   return achados;
 }
 function aplicarNotas(k, r) {
@@ -96,30 +101,33 @@ async function lerGemini(k, arquivos) {
   if (!r.ok || !j.ok) throw new Error(j.erro || 'Não foi possível ler.');
   return j;
 }
-function resultado(k, j) {
-  if (k === 'doc') {
-    const achados = aplicarDoc(k, j.dados || {});
-    const aviso = j.dados && j.dados.cpf_duvida ? ' <b>Atenção: o CPF lido não confere, verifique.</b>' : '';
-    status(k, achados.length ? `<i class="bi bi-check-circle"></i><span>Preenchido: <b>${achados.join(', ')}</b>. Confira os campos em amarelo.${aviso}</span>` : `<i class="bi bi-exclamation-triangle"></i><span>Não consegui ler os dados. Tente outra foto, bem de frente e com luz, ou digite.</span>`, !achados.length);
+function resultado(k, j, aviso = '') {
+  const motor = j.motor === 'gemini' ? ' <span class="sl-selo ok">Gemini</span>' : ' <span class="sl-selo">aparelho</span>';
+  const achados = aplicarDoc(k, j.dados || {});
+  if (k === 'doc' || k === 'end') {
+    const dup = j.dados && j.dados.cpf_duvida ? ' <b>Atenção: o CPF lido não confere, verifique.</b>' : '';
+    status(k, achados.length ? `<i class="bi bi-check-circle"></i><span>Preenchido${motor}: <b>${achados.join(', ')}</b>. Confira os campos em amarelo.${dup}${aviso}</span>` : `<i class="bi bi-exclamation-triangle"></i><span>Não consegui ler os dados${motor}. Tente outra foto, bem de frente e com luz, ou digite.${aviso}</span>`, !achados.length);
   } else {
     const [n, d] = aplicarNotas(k, j.notas || {});
-    status(k, n ? `<i class="bi bi-check-circle"></i><span><b>${n} notas</b> lidas em ${d} disciplinas. Confira com o documento antes de salvar.</span>` : `<i class="bi bi-exclamation-triangle"></i><span>Não achei as notas nesse arquivo. Tente uma foto mais de perto, bem reta, ou digite.</span>`, !n);
+    const extra = achados.length ? ` Também: <b>${achados.join(', ')}</b>.` : '';
+    status(k, n ? `<i class="bi bi-check-circle"></i><span><b>${n} notas</b> lidas em ${d} disciplinas${motor}.${extra} Confira com o documento antes de salvar.${aviso}</span>` : `<i class="bi bi-exclamation-triangle"></i><span>Não achei as notas nesse arquivo${motor}. Tente uma foto mais de perto, bem reta, ou digite.${aviso}</span>`, !n);
   }
 }
 async function processar(k, arquivos) {
+  let avisoG = '';
   if (!arquivos.length) return;
-  if (k === 'doc') { const mini = document.querySelector('[data-mini="doc"]'); [...arquivos].forEach(f => { if (f.type.startsWith('image/')) { const i = document.createElement('img'); i.src = URL.createObjectURL(f); i.alt = ''; mini.appendChild(i); } else { const s = document.createElement('span'); s.textContent = 'PDF'; mini.appendChild(s); } }); }
+  { const mini = document.querySelector(`[data-mini="${k}"]`); [...arquivos].forEach(f => { if (f.type.startsWith('image/')) { const i = document.createElement('img'); i.src = URL.createObjectURL(f); i.alt = ''; mini.appendChild(i); } else { const s = document.createElement('span'); s.textContent = 'PDF'; mini.appendChild(s); } }); }
   if (window.SEL_GEMINI) {
     status(k, `<span class="spinner-border spinner-border-sm"></span><span>Lendo com o Gemini…</span>`);
     try { resultado(k, await lerGemini(k, arquivos)); return; }
-    catch (e) { status(k, `<i class="bi bi-arrow-repeat"></i><span>${e.message} Tentando a leitura no aparelho…</span>`); }
+    catch (e) { avisoG = ` <br><small class="text-danger">Gemini não leu: ${e.message}</small>`; }
   }
   const prog = barra(k, 'Lendo neste aparelho… na primeira vez demora um pouco mais');
   try {
     const texto = await lerArquivos(arquivos, prog);
-    if (k === 'doc') resultado(k, { dados: interpretarDocumento(texto, window.SEL_BAIRROS) });
-    else resultado(k, { notas: interpretarNotas(texto, k === 'h68' ? '68' : '9') });
-  } catch (e) { status(k, `<i class="bi bi-x-octagon"></i><span>${e.message || 'Não foi possível ler o arquivo.'}</span>`, true); }
+    if (k === 'doc' || k === 'end') resultado(k, { dados: interpretarDocumento(texto, window.SEL_BAIRROS) }, avisoG || '');
+    else resultado(k, { dados: interpretarDocumento(texto, []), notas: interpretarNotas(texto, k === 'h68' ? '68' : '9') }, avisoG || '');
+  } catch (e) { status(k, `<i class="bi bi-x-octagon"></i><span>${e.message || 'Não foi possível ler o arquivo.'}${avisoG || ''}</span>`, true); }
 }
 document.querySelectorAll('[data-ler]').forEach(l => {
   const inp = l.querySelector('input[type=file]');

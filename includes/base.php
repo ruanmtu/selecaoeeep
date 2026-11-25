@@ -6,7 +6,7 @@
  * ====================================================================== */
 declare(strict_types=1);
 
-const SEL_VERSAO = '1';
+const SEL_VERSAO = '2';
 const SEL_RAIZ_ESCOLA = 'https://eeepvenceslau.com.br/';
 const SEL_DISC_PADRAO = ['Língua Portuguesa', 'Matemática', 'Ciências', 'História', 'Geografia', 'Arte', 'Educação Física', 'Língua Inglesa', 'Ensino Religioso'];
 
@@ -56,7 +56,7 @@ function sel_migrar(PDO $pdo): void
     $id = $my ? 'INT UNSIGNED AUTO_INCREMENT PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT';
     $fim = $my ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci' : '';
     $tem = fn($t) => $my ? (bool)$pdo->query("SHOW TABLES LIKE '$t'")->fetch() : (bool)$pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='$t'")->fetch();
-    if ($tem('sel_candidatos')) return;
+    if ($tem('sel_candidatos')) { sel_migrar_colunas($pdo, $my); return; }
     $pdo->exec("CREATE TABLE IF NOT EXISTS sel_usuarios (id $id, nome VARCHAR(120) NOT NULL, email VARCHAR(160) NOT NULL UNIQUE, senha_hash VARCHAR(255) NOT NULL,
         papel VARCHAR(20) NOT NULL DEFAULT 'digitador', ativo TINYINT NOT NULL DEFAULT 1, criado_em DATETIME NOT NULL, ultimo_acesso DATETIME NULL)$fim");
     $pdo->exec("CREATE TABLE IF NOT EXISTS sel_config (chave VARCHAR(60) PRIMARY KEY, valor TEXT NULL)$fim");
@@ -68,6 +68,14 @@ function sel_migrar(PDO $pdo): void
         criado_por INT NULL, criado_em DATETIME NOT NULL, atualizado_por INT NULL, atualizado_em DATETIME NULL)$fim");
     $pdo->exec('CREATE UNIQUE INDEX sel_cand_cpf ON sel_candidatos (ano, cpf)');
     $pdo->exec('CREATE INDEX sel_cand_curso ON sel_candidatos (ano, curso)');
+    sel_migrar_colunas($pdo, $my);
+}
+/* v2: naturalidade, sexo, titular do comprovante e CEP */
+function sel_migrar_colunas(PDO $pdo, bool $my): void
+{
+    $cols = $my ? array_column($pdo->query('SHOW COLUMNS FROM sel_candidatos')->fetchAll(), 'Field') : array_column($pdo->query('PRAGMA table_info(sel_candidatos)')->fetchAll(), 'name');
+    foreach (['naturalidade' => 'VARCHAR(120) NULL', 'sexo' => 'VARCHAR(20) NULL', 'titular' => 'VARCHAR(160) NULL', 'cep' => 'VARCHAR(10) NULL'] as $c => $t)
+        if (!in_array($c, $cols, true)) $pdo->exec("ALTER TABLE sel_candidatos ADD COLUMN $c $t");
 }
 
 /* ---------- utilidades ---------- */

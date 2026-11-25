@@ -29,10 +29,15 @@ require __DIR__ . '/includes/topo.php';
 $ver = (int)($_GET['ver'] ?? 0);
 ?>
 <div class="sl-resumo">
-    <div class="sl-res"><small>Inscritos</small><b><?= (int)$tot['t'] ?></b><span><?= implode(' · ', array_map(fn($c) => e($c) . ' ' . ($porCurso[$c] ?? 0), array_keys($cursos))) ?></span></div>
-    <div class="sl-res"><small>Cota de bairro</small><b><?= (int)$tot['bairro'] ?></b><span><?= e(implode(', ', sel_bairros())) ?></span></div>
-    <div class="sl-res"><small>PCD</small><b><?= (int)$tot['pcd'] ?></b><span>com laudo</span></div>
-    <div class="sl-res"><small>Sem notas</small><b><?= (int)$tot['sem'] ?></b><span>ainda sem média</span></div>
+    <div class="sl-res"><span class="sl-res-ic"><i class="bi bi-people"></i></span><div><small>Inscritos</small><b><?= (int)$tot['t'] ?></b></div></div>
+    <div class="sl-res"><span class="sl-res-ic laranja"><i class="bi bi-geo-alt"></i></span><div><small>Cota de bairro</small><b><?= (int)$tot['bairro'] ?></b></div></div>
+    <div class="sl-res"><span class="sl-res-ic azul"><i class="bi bi-universal-access"></i></span><div><small>PCD</small><b><?= (int)$tot['pcd'] ?></b></div></div>
+    <div class="sl-res"><span class="sl-res-ic cinza"><i class="bi bi-hourglass-split"></i></span><div><small>Sem notas</small><b><?= (int)$tot['sem'] ?></b></div></div>
+</div>
+<div class="sl-resumo sl-resumo-cursos">
+    <?php foreach (array_keys($cursos) as $c): ?>
+    <a class="sl-res sl-res-curso<?= $fc === $c ? ' ativo' : '' ?>" href="?curso=<?= urlencode($c) ?>"><div><small><?= e($c) ?></small><b><?= $porCurso[$c] ?? 0 ?></b></div><span class="sl-res-vagas"><?= (int)$cursos[$c][0] ?> vagas</span></a>
+    <?php endforeach; ?>
 </div>
 <div class="sl-card">
     <form class="sl-card-cab sl-filtros" method="get">
