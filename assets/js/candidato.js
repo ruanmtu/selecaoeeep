@@ -1,6 +1,6 @@
 /* Tela do candidato: leitura dos documentos, tabela de notas e média ao vivo */
 // o "?v=" obriga o navegador a baixar a versão nova (sem ele, um leitura.js antigo guardado no cache quebrava a página toda)
-import * as L from './leitura.js?v=7';
+import * as L from './leitura.js?v=8';
 const { lerArquivos, interpretarDocumento, interpretarNotas } = L;
 async function textoPdf(f) { try { return L.textoPdf ? await L.textoPdf(f) : ''; } catch (e) { return ''; } }
 const $ = s => document.querySelector(s);

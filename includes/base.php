@@ -6,7 +6,7 @@
  * ====================================================================== */
 declare(strict_types=1);
 
-const SEL_VERSAO = '7';
+const SEL_VERSAO = '8';
 const SEL_RAIZ_ESCOLA = 'https://eeepvenceslau.com.br/';
 const SEL_DISC_PADRAO = ['Língua Portuguesa', 'Matemática', 'Ciências', 'História', 'Geografia', 'Arte', 'Educação Física', 'Língua Inglesa', 'Ensino Religioso'];
 
@@ -25,9 +25,10 @@ session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'httponly' => true, '
 session_start();
 
 /* ---------- banco ---------- */
-function db(): PDO
+function db(bool $reconectar = false): PDO
 {
     static $pdo = null;
+    if ($reconectar) $pdo = null;
     if ($pdo) return $pdo;
     $op = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false];
     if ($sq = getenv('SELECAO_SQLITE')) { $pdo = new PDO('sqlite:' . $sq, null, null, $op); }   // só nos testes locais
@@ -45,7 +46,15 @@ function db(): PDO
     return $pdo;
 }
 function eh_mysql(): bool { return db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'; }
-function q(string $sql, array $p = []): PDOStatement { $s = db()->prepare($sql); $s->execute($p); return $s; }
+function q(string $sql, array $p = []): PDOStatement
+{
+    try { $s = db()->prepare($sql); $s->execute($p); return $s; }
+    catch (PDOException $e) {
+        /* a hospedagem fecha a conexão parada (ex.: enquanto o Gemini lê um documento): reconecta e repete uma vez */
+        if (!preg_match('/gone away|Lost connection|2006|2013/i', $e->getMessage())) throw $e;
+        $s = db(true)->prepare($sql); $s->execute($p); return $s;
+    }
+}
 function q_um(string $sql, array $p = []): ?array { $r = q($sql, $p)->fetch(); return $r ?: null; }
 function q_todos(string $sql, array $p = []): array { return q($sql, $p)->fetchAll(); }
 function q_valor(string $sql, array $p = []) { $r = q($sql, $p)->fetchColumn(); return $r === false ? null : $r; }
