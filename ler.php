@@ -14,6 +14,12 @@ if (!function_exists('curl_init')) $resp(['erro' => 'O servidor não tem a exten
 $tipo = (string)($_POST['tipo'] ?? '');
 if (!in_array($tipo, ['doc', 'end', 'h68', 'h9', 'teste'], true)) $resp(['erro' => 'Tipo de leitura inválido.'], 400);
 if ($tipo !== 'teste' && !gemini_ativo()) $resp(['erro' => 'A leitura com o Gemini está desligada nas configurações.'], 400);
+/* libera a sessão: sem isso, enquanto o Gemini pensa, todas as outras páginas do mesmo usuário ficam travadas
+   esperando (e o servidor devolve 504) */
+session_write_close();
+/* prazo total da leitura: termina antes do limite do servidor (uns 60 s), nunca deixa a página pendurada */
+const PRAZO_TOTAL = 48;
+function resta(): float { return PRAZO_TOTAL - (microtime(true) - $GLOBALS['INICIO']); }
 
 /* tipo do arquivo pelos primeiros bytes (não depende de extensão do PHP) */
 function tipo_arquivo(string $tmp): string
@@ -91,7 +97,7 @@ function gemini_historico(string $modelo, int $cod, float $seg): void
 function gemini_post(string $base, string $modelo, string $chave, string $corpo): array
 {
     $ch = curl_init($base . rawurlencode($modelo) . ':generateContent');
-    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $corpo, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 100, CURLOPT_CONNECTTIMEOUT => 12,
+    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $corpo, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => (int)max(4, min(40, resta())), CURLOPT_CONNECTTIMEOUT => 8,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'x-goog-api-key: ' . $chave]]);
     $t0 = microtime(true);
     $b = curl_exec($ch); $c = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $e = curl_error($ch); curl_close($ch);
@@ -108,7 +114,7 @@ function gemini_descobrir(string $base, string $chave, string $dica = ''): ?stri
 {
     if ($dica !== '') return $dica;
     $ch = curl_init(rtrim($base, '/') . '?pageSize=1000');
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $chave]]);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $chave]]);
     $j = json_decode((string)curl_exec($ch), true); curl_close($ch);
     $opc = [];
     foreach ((array)($j['models'] ?? []) as $m) {
@@ -120,12 +126,12 @@ function gemini_descobrir(string $base, string $chave, string $dica = ''): ?stri
     if (!$opc) return null;
     arsort($opc); return array_key_first($opc);
 }
-@set_time_limit(150);
+@set_time_limit(PRAZO_TOTAL + 10);
 /** outros modelos flash da conta (os mais novos primeiro), para quando o principal está sobrecarregado */
 function gemini_alternativos(string $base, string $chave, string $atual): array
 {
     $ch = curl_init(rtrim($base, '/') . '?pageSize=1000');
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $chave]]);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_HTTPHEADER => ['x-goog-api-key: ' . $chave]]);
     $j = json_decode((string)curl_exec($ch), true); curl_close($ch);
     $opc = [];
     foreach ((array)($j['models'] ?? []) as $m) {
@@ -153,15 +159,16 @@ $modelo = defined('GEMINI_MODELO') ? GEMINI_MODELO : (cfg('gemini_modelo') ?: 'g
 [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo);
 /* sobrecarga do Google (503/500): espera e tenta de novo; depois tenta outro modelo flash da conta */
 foreach ([1] as $espera) {
-    if (!in_array($cod, [500, 503], true)) break;
+    if (!in_array($cod, [500, 503], true) || resta() < 15) break;
     sleep($espera); [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo);
 }
 /* limite por minuto do plano gratuito (429): cada modelo tem a sua cota; se a espera pedida for curta, espera;
    senão usa outro modelo flash da conta, que tem cota separada */
 $cota = $cod === 429 ? gemini_cota((string)$bruto) : null;
-if ($cota && !$cota['dia'] && $cota['espera'] > 0 && $cota['espera'] <= 6) { sleep((int)ceil($cota['espera'])); [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo); }
-if (in_array($cod, [429, 500, 503], true)) {
+if ($cota && !$cota['dia'] && $cota['espera'] > 0 && $cota['espera'] <= 6 && resta() > 20) { sleep((int)ceil($cota['espera'])); [$bruto, $cod, $erroCurl] = gemini_post($base, $modelo, $chave, $corpo); }
+if (in_array($cod, [429, 500, 503], true) && resta() > 15) {
     foreach (gemini_alternativos($base, $chave, $modelo) as $alt) {
+        if (resta() < 12) break;
         [$b2, $c2, $e2] = gemini_post($base, $alt, $chave, $corpo);
         if ($c2 === 200) { [$bruto, $cod, $erroCurl, $modelo] = [$b2, $c2, $e2, $alt]; $reserva = true; break; }
     }
@@ -173,7 +180,9 @@ if ($cod === 404 || ($cod === 400 && preg_match('/not (found|supported)|no longe
 }
 if ($cod === 200 && empty($reserva)) cfg_gravar('gemini_modelo', $modelo);   // o modelo de reserva (sobrecarga) não fica gravado
 $falha = function (string $msg, int $cod = 502) use ($resp, $tipo) { cfg_gravar('gemini_ultimo_erro', date('d/m/Y H:i') . ' · ' . $tipo . ' · ' . mb_substr($msg, 0, 300)); $resp(['erro' => $msg], $cod); };
-if ($bruto === false) $falha('Não foi possível falar com o Gemini (' . $erroCurl . ').');
+if ($bruto === false || $cod === 0) $falha(stripos($erroCurl, 'timed out') !== false || resta() < 5
+    ? 'O Gemini demorou demais para responder (o plano gratuito está lento agora). Clique em "Tentar de novo com o Gemini".'
+    : 'Não foi possível falar com o Gemini (' . $erroCurl . ').', 504);
 $j = json_decode($bruto, true);
 if ($cod !== 200) {
     $msg = (string)($j['error']['message'] ?? 'sem detalhe');
