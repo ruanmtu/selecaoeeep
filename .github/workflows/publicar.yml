@@ -1,7 +1,7 @@
 # Publica o sistema da seleção por FTP sempre que algo entra na branch main
 # (ou manualmente, em Actions › Publicar › Run workflow).
 # Segredos necessários (Settings › Secrets and variables › Actions):
-#   FTP_SERVIDOR, FTP_USUARIO, FTP_SENHA  e (opcional) FTP_PASTA — sem ela, envia para public_html/
+#   FTP_SERVIDOR, FTP_USUARIO, FTP_SENHA  e (opcional) FTP_PASTA — sem ela, envia para a pasta onde o login cai (public_html)
 # Nunca apaga nada no servidor e nunca envia includes/config.php.
 name: Publicar
 
@@ -26,7 +26,7 @@ jobs:
           P: ${{ secrets.FTP_PASTA }}
         run: |
           if [ -z "$S" ]; then echo "Faltam os segredos do FTP: nada foi publicado."; echo "ok=0" >> $GITHUB_OUTPUT; else echo "ok=1" >> $GITHUB_OUTPUT; fi
-          echo "pasta=${P:-public_html/}" >> $GITHUB_OUTPUT
+          echo "pasta=${P:-./}" >> $GITHUB_OUTPUT   # o login do FTP já cai dentro de public_html
       - name: Enviar por FTP
         if: steps.seg.outputs.ok == '1'
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
