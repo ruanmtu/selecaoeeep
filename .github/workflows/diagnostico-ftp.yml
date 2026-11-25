@@ -1,0 +1,21 @@
+# Diagnóstico (só leitura): mostra onde o login do FTP cai e as pastas que existem.
+# Rodar manualmente em Actions › Diagnóstico do FTP › Run workflow.
+name: Diagnóstico do FTP
+on:
+  workflow_dispatch:
+jobs:
+  ver:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Listar pastas
+        env:
+          S: ${{ secrets.FTP_SERVIDOR }}
+          U: ${{ secrets.FTP_USUARIO }}
+          P: ${{ secrets.FTP_SENHA }}
+        run: |
+          sudo apt-get -qq install -y lftp > /dev/null
+          L() { lftp -u "$U","$P" -e "set ftp:ssl-allow no; set net:max-retries 2; $1; bye" "$S" 2>&1; }
+          echo "### onde o login cai"; L "pwd"
+          echo "### conteúdo"; L "cls -la" | head -40
+          echo "### public_html"; L "cls -la public_html/" | head -40
+          echo "### includes"; L "cls -la public_html/includes/" | head -20; L "cls -la includes/" | head -20
