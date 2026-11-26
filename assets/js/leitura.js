@@ -1,184 +1,185 @@
 /* Leitura de documentos NO PRÓPRIO APARELHO (nada é enviado para fora):
  *  - PDF com texto (ex.: histórico gerado pelo SIGE): o texto sai direto do arquivo (pdf.js);
- *  - foto ou PDF escaneado: OCR em português rodando no navegador (Tesseract).
- * Depois, os textos viram campos (nome, CPF, filiação…) e notas por disciplina. */
+ *  - foto ou PDF escaneado: OCR em português no navegador (Tesseract), com a foto endireitada antes.
+ * Rapidez: o leitor é carregado assim que a tela abre (aquecer) e, em aparelhos bons, 2 leitores trabalham juntos.
+ * Sensibilidade: se faltar algum campo, lê de novo em preto e branco adaptativo; se a confiança vier muito baixa
+ * (foto deitada), tenta girando 90° para cada lado. As regras de cada documento ficam em interpretar.js. */
 import * as pdfjs from '../vendor/pdfjs/pdf.js';
+import { cinza, limiar, orientacao } from './imagem.js?v=11';
+import { interpretarIdentidade, interpretarComprovante, interpretarDocumento, interpretarNotas, pontos, PONTOS_MAX } from './interpretar.js?v=11';
+export { interpretarDocumento, interpretarNotas, interpretarIdentidade, interpretarComprovante };
+
 const base = new URL('../vendor/pdfjs/', import.meta.url).href;
 pdfjs.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.js';
 
+/* ---------------- o leitor (Tesseract) ---------------- */
 const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
-let workerP = null;
+let leitoresP = null;
 function carregarScript(src) {
-  return new Promise((ok, falha) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => falha(new Error('Sem internet para baixar o leitor de fotos.')); document.head.appendChild(s); });
+  return new Promise((ok, falha) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => falha(new Error('Sem internet para baixar o leitor de fotos (só na primeira vez).')); document.head.appendChild(s); });
 }
-async function ocrWorker(progresso) {
-  if (!workerP) workerP = (async () => {
-    if (!window.Tesseract) await carregarScript(TESS);
-    return window.Tesseract.createWorker('por', 1, { logger: m => { if (m.status === 'recognizing text' && ocrWorker.cb) ocrWorker.cb(m.progress); } });
-  })();
-  ocrWorker.cb = progresso;
-  return workerP;
+function quantosLeitores() { const c = navigator.hardwareConcurrency || 2, m = navigator.deviceMemory || 4; return c >= 4 && m >= 3 ? 2 : 1; }
+function leitores() {
+  if (!leitoresP) {
+    leitoresP = (async () => {
+      if (!window.Tesseract) await carregarScript(TESS);
+      const T = window.Tesseract, sch = T.createScheduler();
+      const ws = await Promise.all(Array.from({ length: quantosLeitores() }, () => T.createWorker('por', 1)));
+      for (const w of ws) { await w.setParameters({ preserve_interword_spaces: '1', user_defined_dpi: '300' }); sch.addWorker(w); }
+      return sch;
+    })();
+    leitoresP.catch(() => { leitoresP = null; });
+  }
+  return leitoresP;
+}
+/** começa a carregar o leitor em segundo plano (chamado quando a tela do candidato abre) */
+export function aquecer() { leitores().catch(() => {}); }
+async function ocr(canvas) {
+  const s = await leitores();
+  const r = await s.addJob('recognize', canvas);
+  return { texto: r.data.text || '', conf: r.data.confidence || 0 };
 }
 
-/* imagem -> canvas tratado (cinza, contraste, tamanho bom para OCR) */
-function preparar(fonte, w, h) {
-  const k = Math.min(1, 2400 / Math.max(w, h)) * (Math.max(w, h) < 1400 ? 1.6 : 1);
-  const c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+/* ---------------- foto -> canvas tratado ---------------- */
+async function abrirFoto(arquivo) {
+  try { return await createImageBitmap(arquivo, { imageOrientation: 'from-image' }); }   // respeita a orientação gravada pelo celular
+  catch (e) {
+    const url = URL.createObjectURL(arquivo);
+    try { const img = new Image(); img.src = url; await img.decode(); return img; } finally { URL.revokeObjectURL(url); }
+  }
+}
+const larg = f => f.naturalWidth || f.width, alt = f => f.naturalHeight || f.height;
+/** mede a inclinação numa cópia pequena da foto */
+function medirGiro(fonte) {
+  const w = larg(fonte), h = alt(fonte), k = 700 / Math.max(w, h);
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
   const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(fonte, 0, 0, c.width, c.height);
-  const d = x.getImageData(0, 0, c.width, c.height), p = d.data;
-  let mn = 255, mx = 0; const g = new Uint8ClampedArray(p.length / 4);
-  for (let i = 0, j = 0; i < p.length; i += 4, j++) { const v = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; g[j] = v; }
-  const hist = new Array(256).fill(0); g.forEach(v => hist[v | 0]++);
-  let a = 0; for (let i = 0; i < 256; i++) { a += hist[i]; if (a > g.length * 0.02) { mn = i; break; } }
-  a = 0; for (let i = 255; i >= 0; i--) { a += hist[i]; if (a > g.length * 0.02) { mx = i; break; } }
-  const esc = 255 / Math.max(30, mx - mn);
-  for (let i = 0, j = 0; i < p.length; i += 4, j++) { const v = Math.max(0, Math.min(255, (g[j] - mn) * esc)); p[i] = p[i + 1] = p[i + 2] = v; }
+  const d = x.getImageData(0, 0, c.width, c.height);
+  return orientacao(cinza(d.data, c.width, c.height), c.width, c.height);
+}
+/** inclinação fina de uma foto que vai ser girada em 90°/180° (mede na foto já girada) */
+function medirGiroDeitado(fonte, extra) {
+  const c = tratar(fonte, extra, 'cinza');
+  return medirGiro(c);
+}
+/** foto -> canvas no tamanho bom para OCR (~2000 px), girado (graus anti-horários) e em cinza ou preto e branco */
+function tratar(fonte, graus, modo) {
+  const w0 = larg(fonte), h0 = alt(fonte);
+  const k = Math.min(1, 2000 / Math.max(w0, h0)) * (Math.max(w0, h0) < 1300 ? 1.6 : 1);
+  const w = Math.round(w0 * k), h = Math.round(h0 * k), r = -graus * Math.PI / 180;
+  const W = Math.round(Math.abs(w * Math.cos(r)) + Math.abs(h * Math.sin(r))), H = Math.round(Math.abs(w * Math.sin(r)) + Math.abs(h * Math.cos(r)));
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  x.translate(W / 2, H / 2); x.rotate(r); x.drawImage(fonte, -w / 2, -h / 2, w, h); x.setTransform(1, 0, 0, 1, 0, 0);
+  const d = x.getImageData(0, 0, W, H);
+  let g = cinza(d.data, W, H);
+  if (modo === 'pb') g = limiar(g, W, H);
+  const p = d.data; for (let i = 0, j = 0; j < g.length; i += 4, j++) { p[i] = p[i + 1] = p[i + 2] = g[j]; p[i + 3] = 255; }
   x.putImageData(d, 0, 0);
   return c;
 }
-async function ocr(canvas, progresso) { const w = await ocrWorker(progresso); const r = await w.recognize(canvas); return r.data.text || ''; }
 
-async function lerPdf(arquivo, progresso) {
-  const doc = await pdfjs.getDocument({ data: await arquivo.arrayBuffer(), cMapUrl: base + 'cmaps/', cMapPacked: true, standardFontDataUrl: base + 'standard_fonts/', isEvalSupported: false }).promise;
-  let texto = '';
-  for (let n = 1; n <= Math.min(doc.numPages, 6); n++) {
-    const pg = await doc.getPage(n), tc = await pg.getTextContent();
-    // junta os pedaços em linhas pela altura (y), da esquerda para a direita
-    const linhas = new Map();
-    tc.items.forEach(it => { if (!it.str.trim()) return; const y = Math.round(it.transform[5] / 3) * 3; (linhas.get(y) || linhas.set(y, []).get(y)).push([it.transform[4], it.str]); });
-    let t = [...linhas.entries()].sort((a, b) => b[0] - a[0]).map(([, l]) => l.sort((a, b) => a[0] - b[0]).map(x => x[1]).join('  ')).join('\n');
-    if (t.replace(/\s/g, '').length < 60) {   // PDF escaneado: vira imagem e passa no OCR
-      const vp = pg.getViewport({ scale: 2.2 }), c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
-      await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
-      t = await ocr(preparar(c, c.width, c.height), p => progresso && progresso((n - 1 + p) / Math.min(doc.numPages, 6)));
-    }
-    texto += t + '\n';
-    progresso && progresso(n / Math.min(doc.numPages, 6));
-  }
-  return texto;
-}
-async function lerImagem(arquivo, progresso) {
-  const url = URL.createObjectURL(arquivo);
-  try {
-    const img = new Image(); img.src = url; await img.decode();
-    return await ocr(preparar(img, img.naturalWidth, img.naturalHeight), progresso);
-  } finally { URL.revokeObjectURL(url); }
+/* ---------------- PDF ---------------- */
+function abrirPdf(arquivo) { return arquivo.arrayBuffer().then(b => pdfjs.getDocument({ data: b, cMapUrl: base + 'cmaps/', cMapPacked: true, standardFontDataUrl: base + 'standard_fonts/', isEvalSupported: false }).promise); }
+function textoDaPagina(tc) {
+  const linhas = new Map();   // junta os pedaços em linhas pela altura (y), da esquerda para a direita
+  tc.items.forEach(it => { if (!it.str.trim()) return; const y = Math.round(it.transform[5] / 3) * 3; (linhas.get(y) || linhas.set(y, []).get(y)).push([it.transform[4], it.str]); });
+  return [...linhas.entries()].sort((a, b) => b[0] - a[0]).map(([, l]) => l.sort((a, b) => a[0] - b[0]).map(x => x[1]).join('    ')).join('\n');
 }
 /** só o texto de um PDF (sem OCR); vazio se o PDF for escaneado */
 export async function textoPdf(arquivo) {
   try {
-    const doc = await pdfjs.getDocument({ data: await arquivo.arrayBuffer(), cMapUrl: base + 'cmaps/', cMapPacked: true, isEvalSupported: false }).promise;
-    let t = '';
-    for (let n = 1; n <= Math.min(doc.numPages, 4); n++) {
-      const tc = await (await doc.getPage(n)).getTextContent(), linhas = new Map();
-      tc.items.forEach(it => { if (!it.str.trim()) return; const y = Math.round(it.transform[5] / 3) * 3; (linhas.get(y) || linhas.set(y, []).get(y)).push([it.transform[4], it.str]); });
-      t += [...linhas.entries()].sort((a, b) => b[0] - a[0]).map(([, l]) => l.sort((a, b) => a[0] - b[0]).map(x => x[1]).join('  ')).join('\n') + '\n';
-    }
+    const doc = await abrirPdf(arquivo); let t = '';
+    for (let n = 1; n <= Math.min(doc.numPages, 4); n++) t += textoDaPagina(await (await doc.getPage(n)).getTextContent()) + '\n';
     return t.replace(/\s/g, '').length > 80 ? t : '';
   } catch (e) { return ''; }
 }
-/** PDF escaneado -> fotos JPEG das primeiras páginas (os serviços de IA leem foto melhor e mais rápido que PDF) */
+/** PDF escaneado -> imagens das primeiras páginas */
 export async function imagensPdf(arquivo, max = 3, lado = 2000) {
-  const doc = await pdfjs.getDocument({ data: await arquivo.arrayBuffer(), cMapUrl: base + 'cmaps/', cMapPacked: true, standardFontDataUrl: base + 'standard_fonts/', isEvalSupported: false }).promise;
-  const fotos = [];
+  const doc = await abrirPdf(arquivo), fotos = [];
   for (let n = 1; n <= Math.min(doc.numPages, max); n++) {
     const pg = await doc.getPage(n), v1 = pg.getViewport({ scale: 1 });
     const vp = pg.getViewport({ scale: Math.min(3, lado / Math.max(v1.width, v1.height)) });
     const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
     const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
     await pg.render({ canvasContext: x, viewport: vp }).promise;
-    const b = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.85));
-    if (b) fotos.push(new File([b], `pagina${n}.jpg`, { type: 'image/jpeg' }));
+    fotos.push(c);
   }
   return fotos;
 }
-export async function lerArquivos(arquivos, progresso) {
-  let tudo = '';
-  const lista = [...arquivos];
-  for (let i = 0; i < lista.length; i++) {
-    const f = lista[i], p = x => progresso && progresso((i + x) / lista.length);
-    tudo += (f.type === 'application/pdf' || /\.pdf$/i.test(f.name) ? await lerPdf(f, p) : await lerImagem(f, p)) + '\n';
-  }
-  return tudo;
-}
 
-/* ---------------- interpretação ---------------- */
-const semAcento = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
-const norm = s => semAcento(s).toUpperCase().replace(/[^A-Z0-9@.\/\-: ]+/g, ' ').replace(/\s+/g, ' ').trim();
-const ehNome = s => { const t = semAcento(s).replace(/[^A-Za-z ]/g, '').trim(); const p = t.split(/\s+/).filter(x => x.length > 1); return p.length >= 2 && t.length >= 7 && t.length / Math.max(1, s.trim().length) > 0.8 && !/\b(REPUBLICA|FEDERATIVA|BRASIL|ESTADO|SECRETARIA|CARTEIRA|IDENTIDADE|REGISTRO|CERTIDAO|NASCIMENTO|VALIDA|TERRITORIO|NACIONAL|ASSINATURA|DATA|EXPEDICAO|ORGAO|NATURALIDADE|CPF|FILIACAO|NOME|DOCUMENTO|POLEGAR|DIRETOR|INSTITUTO|CEARA|OFICIAL|CARTORIO|MUNICIPIO|SEXO|MASCULINO|FEMININO|NACIONALIDADE|BRASILEIR)\b/i.test(semAcento(t)); };
-const limpaNome = s => s.replace(/[^A-Za-zÀ-ÿ' ]/g, ' ').replace(/\s+/g, ' ').trim();
-function cpfOk(c) { c = c.replace(/\D/g, ''); if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false; for (let t = 9; t < 11; t++) { let s = 0; for (let i = 0; i < t; i++) s += +c[i] * (t + 1 - i); if (+c[t] !== ((10 * s) % 11) % 10) return false; } return true; }
-const dataBr = (d, m, a) => { a = +a < 100 ? (+a > 30 ? 1900 + +a : 2000 + +a) : +a; const dt = new Date(a, m - 1, d); return dt.getDate() == d && dt.getMonth() == m - 1 ? `${a}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : null; };
-
-export function interpretarDocumento(texto, bairrosCota) {
-  const linhas = texto.split(/\n/).map(l => l.trim()).filter(Boolean), N = linhas.map(norm), r = {};
-  // CPF (o primeiro que tiver dígitos verificadores certos)
-  for (const m of texto.matchAll(/(\d{3})[.\s,]?(\d{3})[.\s,]?(\d{3})[\s.\-–,]?(\d{2})(?!\d)/g)) { const c = m.slice(1).join(''); if (cpfOk(c)) { r.cpf = `${c.slice(0, 3)}.${c.slice(3, 6)}.${c.slice(6, 9)}-${c.slice(9)}`; break; } }
-  const em = texto.match(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/); if (em) r.email = em[0].toLowerCase();
-  const tel = texto.match(/\(?\b(\d{2})\)?\s?(9\s?\d{4})[\s\-.]?(\d{4})\b/); if (tel) r.telefone = `(${tel[1]}) ${tel[2].replace(/\s/g, '')}-${tel[3]}`;
-  const cep = texto.match(/\b(\d{2})\.?(\d{3})-?(\d{3})\b/); if (cep && /CEP/i.test(texto)) r.cep = `${cep[1]}${cep[2]}-${cep[3]}`;
-  // data de nascimento: perto de "NASC", senão a data que dá idade de estudante (11 a 20 anos)
-  const datas = [];
-  N.forEach((l, i) => { for (const m of l.matchAll(/\b(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})\b/g)) { const d = dataBr(m[1], m[2], m[3]); if (d) datas.push([d, i, /NASC/.test(l) || /NASC/.test(N[i - 1] || '')]); } });
-  const idade = d => (Date.now() - new Date(d)) / 3.156e10;
-  const nasc = datas.find(x => x[2] && idade(x[0]) > 8 && idade(x[0]) < 25) || datas.find(x => idade(x[0]) > 10 && idade(x[0]) < 20);
-  if (nasc) r.nascimento = nasc[0];
-  // rótulos "NOME", "PAI", "MÃE", "FILIAÇÃO"
-  const depois = (i, rot) => { const resto = limpaNome(linhas[i].replace(new RegExp('^.*?' + rot + '[^A-Za-zÀ-ÿ]*', 'i'), '')); if (ehNome(resto)) return resto; for (let k = i + 1; k <= i + 2 && k < linhas.length; k++) if (ehNome(linhas[k])) return limpaNome(linhas[k]); return null; };
-  N.forEach((l, i) => {
-    if (!r.nome && /^(NOME|NOME CIVIL|NOME SOCIAL|NOME DO ALUNO|NOME DO A ESTUDANTE|ALUNO|ESTUDANTE|CANDIDATO)\b/.test(l) && !/PAI|MAE/.test(l)) r.nome = depois(i, '(NOME( CIVIL| DO ALUNO)?|ALUNO\\(A\\)|ALUNO|ESTUDANTE|CANDIDATO\\(A\\)|CANDIDATO)');
-    if (!r.pai && /^(PAI|NOME DO PAI|GENITOR)\b/.test(l)) r.pai = depois(i, '(NOME DO PAI|PAI|GENITOR)');
-    if (!r.mae && /^(MAE|NOME DA MAE|GENITORA)\b/.test(l)) r.mae = depois(i, '(NOME DA M[ÃA]E|M[ÃA]E|GENITORA)');
-    if (/FILIACAO/.test(l) && (!r.pai || !r.mae)) {
-      const nomes = []; const resto = limpaNome(linhas[i].replace(/^.*?filia[çc][ãa]o[^A-Za-zÀ-ÿ]*/i, '')); if (ehNome(resto)) nomes.push(resto);
-      for (let k = i + 1; k < Math.min(linhas.length, i + 5) && nomes.length < 2; k++) if (ehNome(linhas[k])) nomes.push(limpaNome(linhas[k]));
-      if (nomes.length === 2) { r.pai = r.pai || nomes[0]; r.mae = r.mae || nomes[1]; } else if (nomes.length === 1) r.mae = r.mae || nomes[0];
-    }
-    if (!r.endereco && /\b(RUA|R |AV |AVENIDA|TRAVESSA|TV |SITIO|DISTRITO|LOCALIDADE|ENDERECO|FAZENDA|VILA|CONJUNTO)\b/.test(' ' + l + ' ') && !/NASC/.test(l)) r.endereco = linhas[i].replace(/^(endere[çc]o|end\.?)\s*[:\-]?\s*/i, '').trim();
-    if (!r.bairro && /^BAIRRO\b/.test(l)) r.bairro = linhas[i].replace(/^bairro\s*[:\-]?\s*/i, '').split(/\s{2,}|CEP|CIDADE/i)[0].trim();
-    if (!r.cidade && /\b(CIDADE|MUNICIPIO)\b/.test(l)) { const c = linhas[i].replace(/^.*?(cidade|munic[íi]pio)\s*[:\-]?\s*/i, '').split(/\s{2,}|UF|\-/)[0].trim(); if (c.length > 2) r.cidade = c; }
-    if (!r.escola_origem && /\b(ESCOLA|E\.?E\.?F|EMEF|COLEGIO|E\.?M\.?E\.?F)\b/.test(l) && !/VENCESLAU|PROFISSIONAL/.test(l)) r.escola_origem = linhas[i].replace(/^.*?(escola|col[ée]gio)\b/i, m => m.match(/(escola|col[ée]gio)/i)[0]).trim();
-  });
-  const sx = norm(texto).match(/SEXO\s*[:\-]?\s*(F|M)\b/); if (sx) r.sexo = sx[1] === 'F' ? 'Feminino' : 'Masculino';
-  if (r.nome) r.nome = titulo(r.nome); if (r.pai) r.pai = titulo(r.pai); if (r.mae) r.mae = titulo(r.mae);
-  if (!r.nome) { const c = linhas.find(l => ehNome(l) && l === l.toUpperCase() && l.split(' ').length >= 3); if (c) r.nome = titulo(limpaNome(c)); }
-  // bairro da cota: procura os bairros no texto inteiro
-  const T = ' ' + norm(texto).replace(/[^A-Z0-9 ]/g, ' ') + ' ';
-  for (const b of bairrosCota || []) { const n = ' ' + norm(b).replace(/[^A-Z0-9 ]/g, ' ') + ' '; if (T.includes(n)) { r.bairro = r.bairro || b; r.cota_bairro = true; break; } }
-  return r;
-}
-function titulo(s) { const m = ['da', 'de', 'do', 'das', 'dos', 'e']; return s.toLowerCase().split(/\s+/).map((p, i) => i && m.includes(p) ? p : p.charAt(0).toUpperCase() + p.slice(1)).join(' '); }
-
-/* disciplinas do histórico: nome que aparece -> nome padronizado */
-const DISC = [
-  [/LINGUA PORTUGUESA|PORTUGUES|L\.? ?PORTUGUESA/, 'Língua Portuguesa'], [/MATEMATICA/, 'Matemática'], [/CIENCIAS/, 'Ciências'],
-  [/EDUCACAO FISICA|ED\.? ?FISICA|E\.? ?FISICA/, 'Educação Física'], [/BIOLOGIA/, 'Biologia'], [/(?<!EDUCACAO |ED\. |ED )\bFISICA\b/, 'Física'], [/QUIMICA/, 'Química'], [/HISTORIA/, 'História'], [/GEOGRAFIA/, 'Geografia'],
-  [/\bARTES?\b|ARTE E/, 'Arte'], [/INGLES|LINGUA INGLESA|L\.? ?INGLESA/, 'Língua Inglesa'],
-  [/ESPANHOL|LINGUA ESPANHOLA/, 'Língua Espanhola'], [/LINGUA ESTRANGEIRA|L\.? ?E\.? ?M\.?\b/, 'Língua Estrangeira'], [/ENSINO RELIGIOSO|RELIGIAO/, 'Ensino Religioso'],
-  [/REDACAO/, 'Redação'], [/FILOSOFIA/, 'Filosofia'], [/SOCIOLOGIA/, 'Sociologia'], [/PROJETO DE VIDA/, 'Projeto de Vida'], [/EMPREENDEDORISMO/, 'Empreendedorismo'],
-];
-function numeros(l) {
+/* ---------------- leitura ---------------- */
+/** arquivos -> partes: textos de PDF e fotos já abertas (na ordem em que vieram) */
+async function partes(arquivos) {
   const out = [];
-  for (const m of l.matchAll(/(?<![\d\/])(\d{1,3})(?:[.,](\d{1,2}))?(?![\d\/])/g)) {
-    let v = parseFloat(m[1] + (m[2] ? '.' + m[2] : ''));
-    if (v > 100) continue;
-    if (!m[2] && v > 10 && v % 40 === 0) continue;   // carga horária (40, 80, 120, 160 h)
-    if (v > 10) v = v / 10;                          // escala de 0 a 100
-    out.push(Math.round(v * 100) / 100);
+  for (const f of [...arquivos].slice(0, 6)) {
+    if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+      const t = await textoPdf(f);
+      if (t) out.push({ texto: t });
+      else for (const c of await imagensPdf(f)) out.push({ foto: c });
+    } else out.push({ foto: await abrirFoto(f) });
   }
   return out;
 }
-/** modo "68": devolve {disc: [n6, n7, n8]} · modo "9": {disc: [b1, b2, b3, b4]} */
-export function interpretarNotas(texto, modo) {
-  const r = {};
-  texto.split(/\n/).forEach(l => {
-    const n = norm(l).replace(/[^A-Z0-9 .,]/g, ' ');
-    const d = DISC.find(([re]) => re.test(n)); if (!d) return;
-    const resto = l.replace(/^[^0-9]*?(?=\d)/, '');   // números depois do nome
-    let v = numeros(resto); if (!v.length) return;
-    if (modo === '68') { v = v.length >= 3 ? v.slice(-3) : v; while (v.length < 3) v.unshift(null); }
-    else v = v.slice(0, 4);
-    if (!r[d[1]]) r[d[1]] = v;
-  });
+/** lê todas as fotos (em paralelo) com um tratamento; devolve o texto junto e a confiança de cada foto */
+async function passada(ps, modo, giroExtra, passo) {
+  const res = await Promise.all(ps.map(async p => {
+    if (p.texto) return { texto: p.texto, conf: 100 };
+    if (p.giro === undefined) p.giro = medirGiro(p.foto);
+    const r = await ocr(tratar(p.foto, p.giro + (giroExtra(p) || 0), modo));
+    passo(); return r;
+  }));
+  return { texto: res.map(r => r.texto).join('\n'), confs: res.map(r => r.conf) };
+}
+function juntar(r, r2) {
+  for (const k in r2) if (k !== 'cpf_duvida' && (r[k] === undefined || r[k] === '' || (k === 'cpf' && r.cpf_duvida && !r2.cpf_duvida))) r[k] = r2[k];
+  if (r.cpf && r2.cpf === r.cpf && !r2.cpf_duvida) delete r.cpf_duvida;
   return r;
+}
+/**
+ * Documento de identidade ('doc') ou comprovante ('end'): devolve os campos achados.
+ * progresso(0..1) atualiza a barra.
+ */
+export async function lerDocumento(arquivos, tipo, bairrosCota, progresso) {
+  const ler = t => tipo === 'doc' ? interpretarIdentidade(t) : interpretarComprovante(t, bairrosCota || []);
+  progresso && progresso(0.03);
+  const ps = await partes(arquivos), nf = ps.filter(p => p.foto).length || 1;
+  let feitos = 0, previsto = nf;
+  const passo = () => { feitos++; progresso && progresso(Math.min(0.97, 0.05 + 0.92 * feitos / previsto)); };
+
+  /* 1ª passada: cinza com contraste, foto endireitada */
+  const p1 = await passada(ps, 'cinza', () => 0, passo);
+  let r = ler(p1.texto);
+  if (pontos(tipo, r) >= PONTOS_MAX[tipo] || !ps.some(p => p.foto)) return r;
+
+  /* 2ª: preto e branco adaptativo (sombra, luz desigual, fundo estampado do RG) */
+  previsto += nf;
+  const p2 = await passada(ps, 'pb', () => 0, passo);
+  r = juntar(r, ler(p2.texto));
+  if (pontos(tipo, r) >= PONTOS_MAX[tipo]) return r;
+
+  /* 3ª: foto deitada ou de cabeça para baixo — só as fotos com confiança muito baixa. Lê girando 90° para cada
+     lado (e 180° se ainda estiver ruim) e fica com o giro de MAIOR confiança: o giro errado lê lixo. */
+  const ruins = ps.map((p, i) => p.foto && Math.max(p1.confs[i], p2.confs[i]) < 55 ? i : -1).filter(i => i >= 0);
+  if (ruins.length) {
+    const melhor = {};
+    for (const extra of [90, -90, 180]) {
+      if (extra === 180 && ruins.every(i => melhor[i] && melhor[i].conf >= 55)) break;
+      previsto += ruins.length;
+      const res = await Promise.all(ruins.map(async i => { const p = ps[i]; const x = await ocr(tratar(p.foto, medirGiroDeitado(p.foto, extra) + extra, 'cinza')); passo(); return [i, x]; }));
+      for (const [i, x] of res) if (!melhor[i] || x.conf > melhor[i].conf) melhor[i] = x;
+    }
+    const textos = ps.map((p, i) => melhor[i] && melhor[i].conf > Math.max(p1.confs[i], p2.confs[i]) ? melhor[i].texto : '');
+    if (textos.some(Boolean)) r = juntar(ler(textos.join('\n')), r);
+  }
+  return r;
+}
+
+/** histórico/boletim: texto de todas as páginas (uma passada; o PDF com texto não passa no OCR) */
+export async function lerArquivos(arquivos, progresso) {
+  const ps = await partes(arquivos), nf = ps.filter(p => p.foto).length || 1;
+  let feitos = 0; progresso && progresso(0.05);
+  const p = await passada(ps, 'cinza', () => 0, () => { feitos++; progresso && progresso(feitos / nf); });
+  return p.texto;
 }

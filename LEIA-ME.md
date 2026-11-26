@@ -1,7 +1,7 @@
 # Seleção de Estudantes · EEEP Venceslau Vieira Batista
 
 Sistema interno (só com login) para a seleção de novos alunos: cadastro dos candidatos com leitura
-automática das fotos e PDFs dos documentos (IA em planos gratuitos, ou no próprio aparelho), notas do 6º ao 9º ano,
+das fotos dos documentos **no próprio aparelho** (nada é enviado para fora), notas do 6º ao 9º ano,
 média aritmética de todas as disciplinas e classificação por curso (ampla concorrência, cota de bairro e PCD).
 
 ## Colocar no ar
@@ -13,16 +13,16 @@ média aritmética de todas as disciplinas e classificação por curso (ampla co
 4. Abra o site: ele pede a chave de instalação e cria o administrador. Depois cadastre a equipe em **Usuários**
    e confira cursos, vagas e bairros em **Configurações**.
 
-## Leitura automática dos documentos (custo zero)
-Só serviços com plano **gratuito e sem cartão**, em cascata (`ler.php`):
-1. **PDF com texto** (ex.: histórico do SIGE): o texto sai direto do arquivo, no aparelho.
-2. **Gemini** (Google) — chave em aistudio.google.com/apikey → `GEMINI_API_KEY` no `config.php`.
-3. **Groq** (reserva) — chave em console.groq.com/keys → `GROQ_API_KEY` no `config.php`.
-   Fotos usam um modelo de visão (`GROQ_MODELO`, padrão `qwen/qwen3.8-27b`); PDF com texto usa
-   `GROQ_MODELO_TEXTO` (padrão `openai/gpt-oss-120b`), que tem cota separada.
-4. Se nenhum conseguir: botão **Ler neste aparelho** (OCR no navegador) ou digitação.
+## Leitura dos documentos (no aparelho, sem serviços externos)
+Tudo roda no navegador do professor, sem custo e sem limite:
+- `assets/js/leitura.js` — o leitor: Tesseract em português, carregado assim que a tela do candidato abre;
+  2 leitores em paralelo em aparelhos bons. PDF com texto não passa no OCR (o texto sai direto do arquivo).
+- `assets/js/imagem.js` — tratamento da foto: endireita (até 20°), contraste e preto e branco adaptativo.
+- `assets/js/interpretar.js` — as regras de cada documento ("onde fica cada informação"):
+  RG antigo, CIN (inclusive a zona MRZ do verso), certidão e comprovante de residência (Enel, Cagece,
+  internet, declaração). No comprovante, pega o titular e o endereço do cliente, nunca o da empresa,
+  e marca a cota de bairro mesmo com 1 letra lida errada.
 
-Quando um serviço estoura o limite (por minuto ou do dia), ele fica **em pausa** e as próximas leituras vão
-direto para o outro. Em **Configurações** aparecem a situação de cada serviço, as leituras do dia e o botão de teste.
-PDF escaneado é convertido em fotos no próprio aparelho antes de ser enviado.
-
+Ordem da leitura: 1ª passada em cinza; se faltar campo, 2ª em preto e branco adaptativo; se a confiança vier
+muito baixa (foto deitada ou de cabeça para baixo), tenta girando 90°/180° e fica com o giro de maior confiança.
+O arquivo `ler.php` só existe para desativar a versão antiga no servidor (a publicação não apaga arquivos).

@@ -6,7 +6,7 @@
  * ====================================================================== */
 declare(strict_types=1);
 
-const SEL_VERSAO = '10';
+const SEL_VERSAO = '11';
 const SEL_RAIZ_ESCOLA = 'https://eeepvenceslau.com.br/';
 const SEL_DISC_PADRAO = ['Língua Portuguesa', 'Matemática', 'Ciências', 'História', 'Geografia', 'Arte', 'Educação Física', 'Língua Inglesa', 'Ensino Religioso'];
 
@@ -50,7 +50,7 @@ function q(string $sql, array $p = []): PDOStatement
 {
     try { $s = db()->prepare($sql); $s->execute($p); return $s; }
     catch (PDOException $e) {
-        /* a hospedagem fecha a conexão parada (ex.: enquanto o Gemini lê um documento): reconecta e repete uma vez */
+        /* a hospedagem fecha a conexão parada: reconecta e repete uma vez */
         if (!preg_match('/gone away|Lost connection|2006|2013/i', $e->getMessage())) throw $e;
         $s = db(true)->prepare($sql); $s->execute($p); return $s;
     }
@@ -245,19 +245,4 @@ function sel_classificar(string $curso): array
     if ($sobra_ampla) { $extra = ($vpcd - $usados['pcd']) + ($vbairro - $usados['bairro']); $antes = $usados['ampla']; $ocupa('ampla', $vampla + $extra, fn($x) => true); $extra = $usados['ampla'] - $antes; }
     $esp = 0; foreach ($lista as &$x) if ($x['vaga'] === null) $x['espera'] = ++$esp; unset($x);
     return ['lista' => $lista, 'vagas' => ['total' => $total, 'ampla' => $vampla, 'pcd' => $vpcd, 'bairro' => $vbairro], 'usados' => $usados, 'extra' => $extra];
-}
-
-/* ---------- leitura automática por IA, só serviços gratuitos (chaves no config.php) ----------
- * 1º Gemini (GEMINI_API_KEY) · 2º Groq (GROQ_API_KEY). Basta um dos dois; com os dois, um cobre o limite do outro.
- * A opção "leitura" = 'gemini' (nome antigo mantido) liga a leitura automática; 'aparelho' desliga. */
-function gemini_configurado(): bool { return defined('GEMINI_API_KEY') && strlen((string)GEMINI_API_KEY) > 20; }
-function groq_configurado(): bool { return defined('GROQ_API_KEY') && strlen((string)GROQ_API_KEY) > 20; }
-function ia_configurada(): bool { return gemini_configurado() || groq_configurado(); }
-function ia_ativa(): bool { return ia_configurada() && cfg('leitura', 'gemini') === 'gemini' && function_exists('curl_init'); }
-function gemini_ativo(): bool { return gemini_configurado() && ia_ativa(); }
-/** leituras feitas hoje por serviço: ['data' => 'Y-m-d', 'gemini' => n, 'groq' => n, 'falhas' => n] */
-function leituras_hoje(): array
-{
-    $c = json_decode((string)cfg('leituras_dia'), true);
-    return is_array($c) && ($c['data'] ?? '') === date('Y-m-d') ? $c : ['data' => date('Y-m-d')];
 }
