@@ -305,8 +305,8 @@ function groq_segundos(string $s): float
 function ler_groq(float $reserva): array
 {
     global $tipo, $TEXTOS, $ARQS, $INSTR, $SCHEMA;
-    $imgs = array_values(array_filter($ARQS, fn($a) => $a[0] !== 'application/pdf'));
-    if (count($ARQS) && !$imgs && !$TEXTOS) return ['ok' => false, 'msg' => 'não lê PDF escaneado direto. Recarregue a página (Ctrl+F5) para o aparelho converter o PDF em imagens.'];
+    $imgs = array_values(array_filter($ARQS, fn($a) => in_array($a[0], ['image/jpeg', 'image/png'], true)));
+    if (count($ARQS) && !$imgs && !$TEXTOS) return ['ok' => false, 'msg' => 'só lê fotos JPG/PNG. Recarregue a página (Ctrl+F5) para o aparelho converter a foto ou o PDF antes de enviar.'];
     $visao = (bool)$imgs;
     $modelo = $visao ? (defined('GROQ_MODELO') ? GROQ_MODELO : 'qwen/qwen3.8-27b') : (defined('GROQ_MODELO_TEXTO') ? GROQ_MODELO_TEXTO : 'openai/gpt-oss-120b');
     $conteudo = [];

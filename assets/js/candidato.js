@@ -1,6 +1,6 @@
 /* Tela do candidato: leitura dos documentos, tabela de notas e média ao vivo */
 // o "?v=" obriga o navegador a baixar a versão nova (sem ele, um leitura.js antigo guardado no cache quebrava a página toda)
-import * as L from './leitura.js?v=9';
+import * as L from './leitura.js?v=10';
 const { lerArquivos, interpretarDocumento, interpretarNotas } = L;
 async function textoPdf(f) { try { return L.textoPdf ? await L.textoPdf(f) : ''; } catch (e) { return ''; } }
 const $ = s => document.querySelector(s);
@@ -88,7 +88,7 @@ function aplicarNotas(k, r) {
 }
 /* foto grande -> JPEG de até 2000 px (envio mais rápido para a leitura automática) */
 async function reduzir(f, lado = 1600) {
-  if (!f.type.startsWith('image/') || f.size < 350 * 1024) return f;
+  if (!f.type.startsWith('image/') || (f.size < 350 * 1024 && /^image\/(jpeg|png)$/.test(f.type))) return f;   // HEIC/WEBP sempre viram JPEG (o Groq só lê JPEG/PNG)
   try {
     const bmp = await createImageBitmap(f), k = Math.min(1, lado / Math.max(bmp.width, bmp.height));
     const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
