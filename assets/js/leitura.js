@@ -5,8 +5,8 @@
  * Sensibilidade: se faltar algum campo, lê de novo em preto e branco adaptativo; se a confiança vier muito baixa
  * (foto deitada), tenta girando 90° para cada lado. As regras de cada documento ficam em interpretar.js. */
 import * as pdfjs from '../vendor/pdfjs/pdf.js';
-import { cinza, limiar, orientacao } from './imagem.js?v=11';
-import { interpretarIdentidade, interpretarComprovante, interpretarDocumento, interpretarNotas, pontos, PONTOS_MAX } from './interpretar.js?v=11';
+import { cinza, limiar, orientacao } from './imagem.js?v=12';
+import { interpretarIdentidade, interpretarComprovante, interpretarDocumento, interpretarNotas, pontos, PONTOS_MAX, notaNome } from './interpretar.js?v=12';
 export { interpretarDocumento, interpretarNotas, interpretarIdentidade, interpretarComprovante };
 
 const base = new URL('../vendor/pdfjs/', import.meta.url).href;
@@ -133,6 +133,8 @@ async function passada(ps, modo, giroExtra, passo) {
   return { texto: res.map(r => r.texto).join('\n'), confs: res.map(r => r.conf) };
 }
 function juntar(r, r2) {
+  /* nomes: quando as leituras discordam, fica o que tem mais "cara de nome" */
+  for (const k of ['nome', 'pai', 'mae', 'titular']) if (r[k] && r2[k] && notaNome(r2[k]) > notaNome(r[k]) + 1) r[k] = r2[k];
   for (const k in r2) if (k !== 'cpf_duvida' && (r[k] === undefined || r[k] === '' || (k === 'cpf' && r.cpf_duvida && !r2.cpf_duvida))) r[k] = r2[k];
   if (r.cpf && r2.cpf === r.cpf && !r2.cpf_duvida) delete r.cpf_duvida;
   return r;

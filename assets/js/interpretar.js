@@ -28,34 +28,52 @@ const idade = iso => (Date.now() - new Date(iso + 'T12:00:00')) / 3.156e10;
 export function titulo(s) { const m = ['da', 'de', 'do', 'das', 'dos', 'e']; return s.toLowerCase().split(/\s+/).map((p, i) => i && m.includes(p) ? p : p.charAt(0).toUpperCase() + p.slice(1)).join(' '); }
 
 /* ---------- nomes de pessoa ---------- */
-const NAO_NOME = /\b(REPUBLICA|FEDERATIVA|BRASIL|BRAZIL|ESTADO|SECRETARIA|SEGURANCA|PUBLICA|CARTEIRA|IDENTIDADE|IDENTITY|REGISTRO|GERAL|CERTIDAO|NASCIMENTO|VALIDA|VALIDADE|TERRITORIO|NACIONAL|ASSINATURA|SIGNATURE|DATA|DATE|EXPEDICAO|EXPEDIDOR|EMISSAO|ORGAO|NATURALIDADE|CPF|FILIACAO|FILIATION|NOME|NAME|SOCIAL|DOCUMENTO|ORIGEM|POLEGAR|DIRETOR|DIRETORA|INSTITUTO|CEARA|OFICIAL|CARTORIO|MUNICIPIO|SEXO|SEX|MASCULINO|FEMININO|NACIONALIDADE|NATIONALITY|BRASILEIR\w*|PLACE|BIRTH|EXPIRY|PERSONAL|NUMBER|LOCAL|TITULAR|PORTADOR|LEI|DECRETO|VIA|REGISTRADOR|LIVRO|FOLHA|TERMO|MATRICULA|AVERBACOES|OBSERVACOES|CONTA|FATURA|VENCIMENTO|TOTAL|PAGAR|ENEL|CAGECE|CLIENTE|CONSUMIDOR|ENDERECO|RUA|AVENIDA|BAIRRO|CIDADE|CEP|LEITURA|CONSUMO|RESIDENCIAL|CLASSE|INSTALACAO|UNIDADE|MEDIDOR|DISTRIBUICAO|ENERGIA|AGUA|ESGOTO|TARIFA|REFERENCIA|EMITIDA|COMPANHIA|SERVICOS?|INTERNET|TELEFONE|PROTOCOLO|AUTENTICACAO|CODIGO|BARRAS|DECLARACAO|RESIDENCIA|DECLARO|PORTADOR|PORTADORA)\b/;
+const NAO_NOME = /\b(GOVERNO|FEDERAL|MINISTERIO|GESTAO|INOVACAO|PUBLICOS|POLICIA|CIVIL|PERICIA|PERITO|IDENTIFICACAO|GOV|VALIDACAO|ASSINADO|DIGITALMENTE|ELETRONICO|DIGITAL|VERSAO|DETRAN|SSP|SSPDS|SUPERINTENDENCIA|COORDENADORIA|DEPARTAMENTO|REPUBLICA|FEDERATIVA|ESTADO|SECRETARIA|SEGURANCA|PUBLICA|CARTEIRA|IDENTIDADE|IDENTITY|REGISTRO|GERAL|CERTIDAO|VALIDA|VALIDADE|TERRITORIO|NACIONAL|ASSINATURA|SIGNATURE|DATA|DATE|EXPEDICAO|EXPEDIDOR|EMISSAO|ORGAO|NATURALIDADE|CPF|FILIACAO|FILIATION|NOME|NAME|SOCIAL|DOCUMENTO|ORIGEM|POLEGAR|DIRETOR|DIRETORA|INSTITUTO|CEARA|OFICIAL|CARTORIO|MUNICIPIO|SEXO|SEX|MASCULINO|FEMININO|NACIONALIDADE|NATIONALITY|BRASILEIR\w*|PLACE|BIRTH|EXPIRY|PERSONAL|NUMBER|LOCAL|TITULAR|PORTADOR|LEI|DECRETO|VIA|REGISTRADOR|LIVRO|FOLHA|TERMO|MATRICULA|AVERBACOES|OBSERVACOES|CONTA|FATURA|VENCIMENTO|TOTAL|PAGAR|ENEL|CAGECE|CLIENTE|CONSUMIDOR|ENDERECO|RUA|AVENIDA|BAIRRO|CIDADE|CEP|LEITURA|CONSUMO|RESIDENCIAL|CLASSE|INSTALACAO|UNIDADE|MEDIDOR|DISTRIBUICAO|ENERGIA|AGUA|ESGOTO|TARIFA|REFERENCIA|EMITIDA|COMPANHIA|SERVICOS?|INTERNET|TELEFONE|PROTOCOLO|AUTENTICACAO|CODIGO|BARRAS|DECLARACAO|RESIDENCIA|DECLARO|PORTADOR|PORTADORA)\b/;
 /* primeiros nomes comuns (ajudam a separar um nome de pessoa de um rótulo lido com erro) */
 const PRENOMES = new Set('MARIA JOSE JOAO ANA ANTONIO ANTONIA FRANCISCO FRANCISCA RAIMUNDO RAIMUNDA LUIZ LUIS PAULO PAULA CARLOS CARLA MANOEL MANUEL PEDRO LUCAS GABRIEL GABRIELA RAFAEL RAFAELA DANIEL DANIELA MARCOS MARCO MARCELO MARCIA MATEUS MATHEUS LEONARDO JULIA JULIANA FERNANDO FERNANDA RICARDO RITA RITA SEBASTIAO SEBASTIANA GERALDO GERALDA JORGE ROBERTO ROBERTA EDUARDO EDUARDA SANDRA SONIA SIMONE PATRICIA ALINE AMANDA BRUNA BRUNO CAMILA CICERO CICERA DAVI DAVID EMANUEL EMANUELLE ENZO ERICK FABIO FABIANA FELIPE FRANCINALDO GUSTAVO HELENA IGOR ISABEL ISABELA ISABELLE IVONE JEFFERSON JESSICA JOANA JOSEFA JOSIAS KAUAN KAUA LARA LARISSA LETICIA LIVIA LORENA LUANA LUCIA LUCIANA LUCIANO MARIANA MIGUEL NATALIA NICOLAS OTAVIO PABLO PRISCILA RAQUEL REGINA RENATA RODRIGO ROSA ROSANA SAMUEL SARA SARAH TATIANA TERESA THIAGO TIAGO VALDIR VALERIA VANESSA VERA VICTOR VITOR VITORIA WELLINGTON WESLEY YASMIN ALICE ALEXANDRE ADRIANA ADRIANO AGNALDO ANDRE ANDREA ANTONIEL ARTHUR ARTUR BEATRIZ BENEDITO BENEDITA CLAUDIA CLAUDIO CRISTIANE CRISTINA DEBORA DENISE DIEGO EDSON ELIANE ELISANGELA ERIVALDO EVANDRO FATIMA FLAVIA FLAVIO FRANCIMAR GILVAN HELIO HEITOR IRACEMA IRENE IVAN JAQUELINE JANAINA JOAQUIM JULIO KARINA KATIA LEANDRO LUZIA MAGNO MARILENE MARLENE MILENA MONICA NAYARA NEIDE NILTON NORMA ODETE OSVALDO PIETRO RAIANE REBECA ROSIANE SERGIO SILVANA SILVIO SOFIA SOPHIA SUELI TEREZA VALDECI VALDENIA VILMA WALTER ZILDA'.split(' '));
+const SOBRENOMES = new Set('SILVA SOUSA SOUZA OLIVEIRA LIMA PEREIRA ALVES COSTA SANTOS RODRIGUES FERREIRA GOMES MARTINS ARAUJO RIBEIRO CARVALHO ALMEIDA NASCIMENTO BARBOSA ROCHA DIAS MOREIRA CAVALCANTE CAVALCANTI MENDES NUNES VIEIRA BEZERRA FREITAS LOPES MOURA SALES MACEDO MAIA PINHEIRO TEIXEIRA BATISTA FERNANDES MONTEIRO CRUZ CASTRO CAMPOS PAIVA SAMPAIO QUEIROZ UCHOA FARIAS MEDEIROS XAVIER HOLANDA LEITE BRAGA MATOS MATTOS ANDRADE TAVARES CORREIA CORREA MESQUITA AGUIAR JUNIOR NETO FILHO SOBRINHO PONTES MARQUES BRITO SIQUEIRA GUIMARAES BRASIL LUZ PAZ MELO MELLO NOGUEIRA FONTES FREIRE PIRES PINTO REIS RAMOS SA VASCONCELOS JESUS CHAVES ROLIM TORRES VALE FEITOSA LOIOLA LOYOLA ARRUDA BENEVIDES SARAIVA GADELHA FIRMINO DUARTE'.split(' '));
 /** quanto uma linha "parece" nome de pessoa (0 = não parece) */
 export function notaNome(s) {
   if (!ehNome(s)) return 0;
   const p = semAcento(limpaNome(s)).toUpperCase().split(' ');
   const lig = ['DA', 'DE', 'DO', 'DAS', 'DOS', 'E'];
-  let n = 1 + (PRENOMES.has(p[0]) ? 3 : 0) + (p.length >= 3 ? 1 : 0) + (p.length >= 4 ? 1 : 0);
+  let n = 1 + (PRENOMES.has(p[0]) || FEM.has(p[0]) || MASC.has(p[0]) ? 3 : 0) + (p.length >= 3 ? 1 : 0) + (p.length >= 4 ? 1 : 0) + Math.min(2, p.slice(1).filter(w => SOBRENOMES.has(w)).length);
   n -= p.filter(w => !lig.includes(w) && w.length < 3).length * 2;   // pedaços curtos = lixo de leitura
   n -= p.filter(w => /[^AEIOUY]{4,}/.test(w)).length;                // muitas consoantes seguidas
   return Math.max(0, n);
 }
 export function limpaNome(s) {
-  let p = String(s).replace(/[^A-Za-zÀ-ÿ' ]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
+  let p = String(s).replace(/[ÁÀÂÃ]{2,}/g, m => m[m.length - 1]).replace(/[ÉÊ]{2,}/g, m => m[0]).replace(/[ÓÔÕ]{2,}/g, m => m[m.length - 1]).replace(/[^A-Za-zÀ-ÿ' ]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
   while (p.length && p[0].length < 2) p.shift();                                    // lixo de 1 letra nas pontas
   while (p.length && p[p.length - 1].length < 2) p.pop();
   return p.join(' ');
 }
+/* palavras de cabeçalho/rótulo: uma linha que tenha uma delas, mesmo lida com 1-2 letras erradas, não é nome */
+const ROTULOS = ['GOVERNO', 'FEDERAL', 'REPUBLICA', 'FEDERATIVA', 'CARTEIRA', 'IDENTIDADE', 'NACIONAL', 'NATURALIDADE', 'FILIACAO', 'FILIATION',
+  'VALIDADE', 'ASSINATURA', 'SECRETARIA', 'SEGURANCA', 'PUBLICA', 'MINISTERIO', 'DOCUMENTO', 'REGISTRO', 'EXPEDICAO', 'NACIONALIDADE',
+  'NATIONALITY', 'IDENTIFICACAO', 'TERRITORIO', 'ORIGEM', 'EMISSAO', 'EXPEDIDOR', 'SIGNATURE', 'PERSONAL', 'DIRETOR', 'INSTITUTO', 'CERTIDAO', 'CARTORIO'];
+export function pareceRotulo(t) {
+  return semAcento(t).toUpperCase().replace(/[^A-Z ]/g, ' ').split(/\s+/).some(w => w.length >= 5 && ROTULOS.some(r => Math.abs(r.length - w.length) <= 2 && distancia(w, r) <= (r.length >= 9 ? 2 : 1)));
+}
+const FEM = new Set('ANA MARIA RITA RUTE RUTH ALICE ISABEL RAQUEL BEATRIZ RAIMUNDA LUZ CARMEM CARMEN MIRIAM ESTER ESTHER LILIAN VIVIAN KAREN ELLEN HELEN EDITE IVONE IRENE ALINE ELIANE DENISE CRISTIANE ROSIANE SIMONE ODETE ELIENE ROSILENE MARILENE MARLENE GISELE JAQUELINE SUELI NEIDE IRACI INES INÊS LUCI NOEMI RAQUELE SOLANGE ROSE ROSANGELA DAIANE TAMIRES THAIS LAIS MARISE NAIR ZULEIDE DAMIANA'.split(' '));
+const MASC = new Set('JOSUE LUCA NOA ISAIAS ELIAS MATIAS TOBIAS JONAS NICOLAS LUCAS MARCOS CARLOS LUIS LUIZ JOSE JOAO DAVI DAVID SAMUEL MANOEL MANUEL DANIEL GABRIEL RAFAEL MIGUEL ISRAEL ABEL NOEL JOEL ARTUR ARTHUR HEITOR VITOR VICTOR NESTOR JUNIOR WALTER WAGNER VALDIR VALDECI GERSON NILTON EDSON WILSON NELSON AIRTON AILTON MILTON IVAN ALAN ALLAN RUAN JEAN KAUAN JULIAN IAN RENAN WILLIAN WILLIAM CAUE KAUE KAUA FELIPE HENRIQUE ALEXANDRE ANDRE JORGE GUILHERME CLEBER ROBSON ENZO PIETRO'.split(' '));
+/** 'F', 'M' ou null pelo primeiro nome (lista + terminação: -A feminino, -O masculino) */
+export function genero(nome) {
+  const p = semAcento(limpaNome(nome)).toUpperCase().split(' ')[0] || '';
+  if (FEM.has(p)) return 'F'; if (MASC.has(p)) return 'M';
+  if (/A$/.test(p)) return 'F'; if (/O$/.test(p)) return 'M';
+  return null;
+}
+const nomeBom = s => notaNome(s) > 0;
 export function ehNome(s) {
-  const t = limpaNome(s); if (!t) return false;
+  const t = limpaNome(s); if (!t || /[\/|\\]/.test(s)) return false;
   const p = t.split(' ').filter(x => x.length > 1);
   const letras = (String(s).match(/[A-Za-zÀ-ÿ]/g) || []).length, total = String(s).replace(/\s/g, '').length;
-  return p.length >= 2 && t.length >= 7 && letras / Math.max(1, total) > 0.8 && !NAO_NOME.test(semAcento(t).toUpperCase());
+  return p.length >= 2 && t.length >= 7 && letras / Math.max(1, total) > 0.8 && !NAO_NOME.test(semAcento(t).toUpperCase()) && !pareceRotulo(t);
 }
 
 /* ---------- utilidades de linha ---------- */
-function linhasDe(texto) { return String(texto).split(/\n/).flatMap(l => l.split(/ {4,}|\t+/)).map(l => l.replace(/\s+/g, ' ').trim()).filter(l => l.replace(/[^A-Za-z0-9]/g, '').length >= 2); }
+function linhasDe(texto) { return String(texto).split(/\n/).flatMap(l => l.split(/ {4,}|\t+/)).map(l => l.replace(/\s+/g, ' ').trim()).filter(l => l.replace(/[^A-Za-z0-9]/g, '').length >= 2 || /^[MF]$/.test(l)); }
 /** primeira linha cujo texto normalizado casa com o rótulo */
 const acha = (N, re, de = 0) => { for (let i = de; i < N.length; i++) if (re.test(N[i])) return i; return -1; };
 /** valor de um rótulo: o resto da mesma linha (se for válido) ou as linhas seguintes */
@@ -118,35 +136,73 @@ export function interpretarIdentidade(texto) {
   const nasc = ds.find(x => x.nasc && !x.ruim && x.id > 8 && x.id < 30) || ds.find(x => !x.ruim && x.id > 10 && x.id < 20) || (mrz.nascimento ? { iso: mrz.nascimento } : null);
   if (nasc) r.nascimento = nasc.iso;
 
-  /* nome: rótulo NOME (não o social, não o do pai/mãe); senão a MRZ; senão a maior linha que parece nome */
+  /* ----- pai, mãe e nome ----- */
+  const mesmo = (a, b) => so(limpaNome(a)) === so(limpaNome(b));
+  const sobrenomes = n => so(limpaNome(n)).split(' ').slice(1).filter(w => w.length >= 3 && !['DAS', 'DOS'].includes(w));
+  const divideSobrenome = (a, b) => { const x = sobrenomes(a); return sobrenomes(b).some(w => x.includes(w)); };
+  /* pai e mãe pelo gênero do primeiro nome; sem pista, a ordem do documento (pai, depois mãe) */
+  const filiacao = nomes => {
+    nomes = nomes.map(limpaNome).filter(Boolean).slice(0, 2);
+    if (nomes.length === 2) { const [g1, g2] = nomes.map(genero); return g1 === 'F' && g2 !== 'F' || g2 === 'M' && g1 !== 'M' ? { mae: nomes[0], pai: nomes[1] } : { pai: nomes[0], mae: nomes[1] }; }
+    if (nomes.length === 1) return genero(nomes[0]) === 'M' ? { pai: nomes[0] } : { mae: nomes[0] };
+    return {};
+  };
+  /* rótulo NOME (não o social, não o do pai/mãe) */
   const iNome = N.findIndex(l => /^(NOME|NOME CIVIL|NAME|NOME DO A? ?REGISTRADO|REGISTRADO)\b/.test(l) && !/SOCIAL|PAI|MAE/.test(l));
-  let nome = aposRotulo(L, N, iNome, /(nome( civil)?|name)( \/ name)?/, ehNome, 2);
-  if (!nome && mrz.nome) nome = mrz.nome;
-  /* sem rótulo: no RG os valores vêm na ordem nome, pai, mãe; na CIN (verso) só pai e mãe */
-  const seqNomes = L.map((l, i) => ehNome(l) && limpaNome(l).split(' ').length >= 2 ? i : -1).filter(i => i >= 0);
-  if (!nome && seqNomes.length && !mrz.nome) nome = L[seqNomes[0]];
-  if (nome) r.nome = limpaNome(nome);
-
-  /* filiação: duas linhas de nome depois do rótulo (pai e mãe); certidão: rótulos PAI e MÃE */
-  const iFil = acha(N, /FILIA(CAO|TION)/);
+  let nome = aposRotulo(L, N, iNome, /(nome( civil)?|name)( \/ name)?/, nomeBom, 2);
+  /* filiação: até duas linhas de nome depois do rótulo; certidão: rótulos PAI e MÃE */
+  const iFil = N.findIndex(l => /FILIA(CAO|TION)/.test(l) || (pareceRotulo(l) && /^F[I1L]L/.test(l)));
+  let pais = {};
   if (iFil >= 0) {
-    const nomes = []; const resto = L[iFil].replace(/^.*?filia[çc][ãa]o[\s:\-/]*(filiation)?[\s:\-]*/i, '');
-    if (ehNome(resto)) nomes.push(limpaNome(resto));
-    for (let k = iFil + 1; k < Math.min(L.length, iFil + 5) && nomes.length < 2; k++) {
-      if (/NATURALIDADE|PLACE OF|NASCIMENTO|DOC|CPF|ORGAO/.test(N[k])) break;
-      if (ehNome(L[k])) nomes.push(limpaNome(L[k]));
+    const nomes = []; const resto = L[iFil].replace(/^.*?filia\S*[\s:\-/]*(filiation)?[\s:\-]*/i, '');
+    if (nomeBom(resto)) nomes.push(resto);
+    for (let k = iFil + 1; k < Math.min(L.length, iFil + 6) && nomes.length < 2; k++) {
+      if (/NATURALIDADE|PLACE OF|NASCIMENTO|DOC|CPF|ORGAO|EXPEDIDOR|EMISSAO/.test(N[k])) break;
+      if (nomeBom(L[k]) && !(nome && mesmo(L[k], nome))) nomes.push(L[k]);
     }
-    if (nomes.length === 2) { r.pai = nomes[0]; r.mae = nomes[1]; } else if (nomes.length === 1) r.mae = nomes[0];
+    pais = filiacao(nomes);
   }
   const iPai = N.findIndex(l => /^(PAI|NOME DO PAI|GENITOR)\b/.test(l)), iMae = N.findIndex(l => /^(MAE|NOME DA MAE|GENITORA)\b/.test(l));
-  if (!r.pai && iPai >= 0) { const v = aposRotulo(L, N, iPai, /(nome do pai|pai|genitor)/, ehNome, 1); if (v) r.pai = limpaNome(v); }
-  if (!r.mae && iMae >= 0) { const v = aposRotulo(L, N, iMae, /(nome da m[ãa]e|m[ãa]e|genitora)/, ehNome, 1); if (v) r.mae = limpaNome(v); }
-  if (!r.pai && !r.mae && iFil < 0 && iPai < 0 && iMae < 0) {
-    const mesmo = (a, b) => so(a) === so(b);
-    const resto = seqNomes.filter(i => !r.nome || !mesmo(limpaNome(L[i]), r.nome));
-    for (let j = 0; j + 1 < resto.length; j++) if (resto[j + 1] - resto[j] <= 2) { r.pai = limpaNome(L[resto[j]]); r.mae = limpaNome(L[resto[j + 1]]); break; }
+  if (!pais.pai && iPai >= 0) { const v = aposRotulo(L, N, iPai, /(nome do pai|pai|genitor)/, nomeBom, 1); if (v) pais.pai = limpaNome(v); }
+  if (!pais.mae && iMae >= 0) { const v = aposRotulo(L, N, iMae, /(nome da m[ãa]e|m[ãa]e|genitora)/, nomeBom, 1); if (v) pais.mae = limpaNome(v); }
+  /* linhas que parecem nome de pessoa (o cabeçalho e o lixo de leitura já ficam de fora) */
+  /* nos documentos de identidade os nomes são impressos em MAIÚSCULAS: linha em minúsculas é rótulo lido errado */
+  const maiusc = l => { const a = l.replace(/[^A-Za-zÀ-ÿ]/g, ''); return a.length && a.replace(/[^A-ZÀ-Þ]/g, '').length / a.length >= 0.8; };
+  const pessoas = L.map((l, i) => ({ i, t: limpaNome(l), n: maiusc(l) ? notaNome(l) : 0 })).filter(c => c.n > 0);
+  const ehPai = t => (pais.pai && mesmo(t, pais.pai)) || (pais.mae && mesmo(t, pais.mae));
+  if (!nome && mrz.nome) nome = mrz.nome;
+  /* sem rótulos: no RG e na CIN a filiação vem DEPOIS do nome, em duas linhas seguidas. Então o último par de
+     nomes seguidos (que não seja o nome já achado) é pai/mãe; o nome do candidato é o melhor que sobra,
+     de preferência dividindo um sobrenome com os pais. O cabeçalho e o lixo de leitura já ficaram de fora. */
+  const semRotFil = !pais.pai && !pais.mae && iFil < 0 && iPai < 0 && iMae < 0;
+  const fortes = pessoas.filter(c => c.n >= 2 && !(nome && mesmo(c.t, nome)));
+  if (semRotFil) {
+    for (let j = fortes.length - 2; j >= 0; j--) {
+      if (fortes[j + 1].i - fortes[j].i > 2) continue;
+      const sobra = nome || pessoas.some(c => c.i !== fortes[j].i && c.i !== fortes[j + 1].i);
+      if (sobra) { pais = filiacao([fortes[j].t, fortes[j + 1].t]); break; }
+    }
   }
-  if (r.nome && r.mae === r.nome) delete r.mae;
+  if (!nome) {
+    const livres = pessoas.filter(c => !ehPai(c.t));
+    const ref = [pais.pai, pais.mae].filter(Boolean);
+    let melhor = null, nm = -1;
+    if (ref.length) livres.forEach((c, j) => {   // com pais conhecidos: o que divide sobrenome com eles
+      const v = c.n + (ref.some(x => divideSobrenome(c.t, x)) ? 4 : 0) - j * 0.25;
+      if (v > nm) { nm = v; melhor = c; }
+    });
+    else melhor = livres.find(c => c.n >= 2) || livres[0];   // sem pistas: a ordem do documento (o nome vem antes da filiação)
+    if (melhor) nome = melhor.t;
+  }
+  if (nome) r.nome = limpaNome(nome);
+  /* só sobraram nomes sem par (ex.: RG com um genitor e sem rótulo): depois do nome, o próximo é pai ou mãe */
+  if (semRotFil && !pais.pai && !pais.mae && r.nome) {
+    const iN = pessoas.findIndex(c => mesmo(c.t, r.nome)); const prox = pessoas[iN + 1];
+    if (iN >= 0 && prox && prox.n >= 2 && prox.i - pessoas[iN].i <= 3) pais = filiacao([prox.t]);
+  }
+  if (pais.pai) r.pai = pais.pai; if (pais.mae) r.mae = pais.mae;
+  if (r.nome && r.mae && mesmo(r.mae, r.nome)) delete r.mae;
+  if (r.nome && r.pai && mesmo(r.pai, r.nome)) delete r.pai;
 
   /* naturalidade: "BOA VIAGEM-CE" / "BOA VIAGEM/CE" depois do rótulo (no RG vem na mesma linha da data) */
   const iNat = acha(N, /NATURALIDADE|PLACE OF BIRTH/);
@@ -175,6 +231,8 @@ export function interpretarIdentidade(texto) {
     const pega = s => { const m = s.match(/^(FEMININO|MASCULINO|FEM|MASC|F|M)\b/); return m ? (m[1][0] === 'F' ? 'Feminino' : 'Masculino') : null; };
     r.sexo = pega(resto) || pega(N[iSx + 1] || '') || undefined;
   }
+  /* CIN sem o rótulo: sobra "M   BRA" (sexo e nacionalidade lado a lado; às vezes o M vira "Mo") */
+  if (!r.sexo) N.forEach((l, i) => { if (r.sexo) return; const m = l.match(/^(M|F)[O0]?(\s+BRA\b|$)/); if (m && (m[2] || /^BRA\b/.test(N[i + 1] || ''))) r.sexo = m[1] === 'F' ? 'Feminino' : 'Masculino'; });
   if (!r.sexo && mrz.sexo) r.sexo = mrz.sexo;
   for (const k of ['nome', 'pai', 'mae', 'naturalidade']) if (r[k]) r[k] = r[k].toUpperCase();
   for (const k in r) if (r[k] === undefined || r[k] === '') delete r[k];
