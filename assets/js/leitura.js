@@ -5,8 +5,8 @@
  * Sensibilidade: se faltar algum campo, lê de novo em preto e branco adaptativo; se a confiança vier muito baixa
  * (foto deitada), tenta girando 90° para cada lado. As regras de cada documento ficam em interpretar.js. */
 import * as pdfjs from '../vendor/pdfjs/pdf.js';
-import { cinza, limiar, orientacao } from './imagem.js?v=12';
-import { interpretarIdentidade, interpretarComprovante, interpretarDocumento, interpretarNotas, pontos, PONTOS_MAX, notaNome } from './interpretar.js?v=12';
+import { cinza, limiar, orientacao, recorte, deitada } from './imagem.js?v=13';
+import { interpretarIdentidade, interpretarComprovante, interpretarDocumento, interpretarNotas, pontos, PONTOS_MAX, notaNome } from './interpretar.js?v=13';
 export { interpretarDocumento, interpretarNotas, interpretarIdentidade, interpretarComprovante };
 
 const base = new URL('../vendor/pdfjs/', import.meta.url).href;
@@ -49,33 +49,37 @@ async function abrirFoto(arquivo) {
   }
 }
 const larg = f => f.naturalWidth || f.width, alt = f => f.naturalHeight || f.height;
-/** mede a inclinação numa cópia pequena da foto */
-function medirGiro(fonte) {
-  const w = larg(fonte), h = alt(fonte), k = 700 / Math.max(w, h);
-  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
-  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(fonte, 0, 0, c.width, c.height);
-  const d = x.getImageData(0, 0, c.width, c.height);
-  return orientacao(cinza(d.data, c.width, c.height), c.width, c.height);
-}
-/** inclinação fina de uma foto que vai ser girada em 90°/180° (mede na foto já girada) */
-function medirGiroDeitado(fonte, extra) {
-  const c = tratar(fonte, extra, 'cinza');
-  return medirGiro(c);
-}
-/** foto -> canvas no tamanho bom para OCR (~2000 px), girado (graus anti-horários) e em cinza ou preto e branco */
-function tratar(fonte, graus, modo) {
-  const w0 = larg(fonte), h0 = alt(fonte);
-  const k = Math.min(1, 2000 / Math.max(w0, h0)) * (Math.max(w0, h0) < 1300 ? 1.6 : 1);
-  const w = Math.round(w0 * k), h = Math.round(h0 * k), r = -graus * Math.PI / 180;
+const TUDO = { x: 0, y: 0, w: 1, h: 1 };
+/** desenha o pedaço "caixa" da foto, girado (graus anti-horários), com o lado maior = lado (ou escala k) */
+function desenhar(fonte, caixa, graus, lado, kMax = 2.5) {
+  const sx = caixa.x * larg(fonte), sy = caixa.y * alt(fonte), sw = caixa.w * larg(fonte), sh = caixa.h * alt(fonte);
+  const k = Math.min(kMax, lado / Math.max(sw, sh)), w = Math.max(1, Math.round(sw * k)), h = Math.max(1, Math.round(sh * k)), r = -graus * Math.PI / 180;
   const W = Math.round(Math.abs(w * Math.cos(r)) + Math.abs(h * Math.sin(r))), H = Math.round(Math.abs(w * Math.sin(r)) + Math.abs(h * Math.cos(r)));
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const x = c.getContext('2d', { willReadFrequently: true });
   x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
-  x.translate(W / 2, H / 2); x.rotate(r); x.drawImage(fonte, -w / 2, -h / 2, w, h); x.setTransform(1, 0, 0, 1, 0, 0);
+  x.translate(W / 2, H / 2); x.rotate(r); x.drawImage(fonte, sx, sy, sw, sh, -w / 2, -h / 2, w, h); x.setTransform(1, 0, 0, 1, 0, 0);
+  return { c, x, W, H };
+}
+function cinzaDe(fonte, caixa, graus, lado) { const { x, W, H } = desenhar(fonte, caixa, graus, lado, 1); return { g: cinza(x.getImageData(0, 0, W, H).data, W, H), w: W, h: H }; }
+/** uma vez por foto: onde está o documento e se a foto está deitada */
+function analisar(p) {
+  if (p.caixa) return;
+  const a = cinzaDe(p.foto, TUDO, 0, 300);
+  p.caixa = recorte(a.g, a.w, a.h) || TUDO;
+  const b = cinzaDe(p.foto, p.caixa, 0, 700), d = deitada(b.g, b.w, b.h);
+  p.giros = d.razao > 1.3 ? [-90, 90] : [0];   // deitada: as duas posições de 90°; o OCR escolhe pela confiança
+  p.duvida = d.razao >= 0.85 && d.razao <= 1.3;
+}
+/** inclinação fina (até 20°) do documento já na posição (graus) */
+function medirGiro(p, graus) { const b = cinzaDe(p.foto, p.caixa, graus, 700); return graus + orientacao(b.g, b.w, b.h); }
+/** documento recortado -> canvas para o OCR (~2000 px), em cinza ou preto e branco */
+function tratar(p, graus, modo) {
+  const { c, x, W, H } = desenhar(p.foto, p.caixa, graus, 2000);
   const d = x.getImageData(0, 0, W, H);
   let g = cinza(d.data, W, H);
   if (modo === 'pb') g = limiar(g, W, H);
-  const p = d.data; for (let i = 0, j = 0; j < g.length; i += 4, j++) { p[i] = p[i + 1] = p[i + 2] = g[j]; p[i + 3] = 255; }
+  const px = d.data; for (let i = 0, j = 0; j < g.length; i += 4, j++) { px[i] = px[i + 1] = px[i + 2] = g[j]; px[i + 3] = 255; }
   x.putImageData(d, 0, 0);
   return c;
 }
@@ -122,15 +126,19 @@ async function partes(arquivos) {
   }
   return out;
 }
-/** lê todas as fotos (em paralelo) com um tratamento; devolve o texto junto e a confiança de cada foto */
-async function passada(ps, modo, giroExtra, passo) {
-  const res = await Promise.all(ps.map(async p => {
-    if (p.texto) return { texto: p.texto, conf: 100 };
-    if (p.giro === undefined) p.giro = medirGiro(p.foto);
-    const r = await ocr(tratar(p.foto, p.giro + (giroExtra(p) || 0), modo));
-    passo(); return r;
-  }));
-  return { texto: res.map(r => r.texto).join('\n'), confs: res.map(r => r.conf) };
+/** lê uma foto na posição "giro" (graus) com o tratamento "modo" */
+async function lerFoto(p, giro, modo) { const g = medirGiro(p, giro); const r = await ocr(tratar(p, g, modo)); r.giro = giro; return r; }
+/** 1ª leitura de cada foto: recorta, decide a posição (deitada: tenta os dois lados de 90° e fica com o de maior confiança) */
+async function primeira(p, passo) {
+  analisar(p);
+  let melhor = null;
+  for (const giro of p.giros) {
+    const r = await lerFoto(p, giro, 'cinza'); passo();
+    if (!melhor || r.conf > melhor.conf) melhor = r;
+    if (melhor.conf >= 60) break;
+  }
+  p.giro = melhor.giro;
+  return melhor;
 }
 function juntar(r, r2) {
   /* nomes: quando as leituras discordam, fica o que tem mais "cara de nome" */
@@ -146,34 +154,35 @@ function juntar(r, r2) {
 export async function lerDocumento(arquivos, tipo, bairrosCota, progresso) {
   const ler = t => tipo === 'doc' ? interpretarIdentidade(t) : interpretarComprovante(t, bairrosCota || []);
   progresso && progresso(0.03);
-  const ps = await partes(arquivos), nf = ps.filter(p => p.foto).length || 1;
-  let feitos = 0, previsto = nf;
-  const passo = () => { feitos++; progresso && progresso(Math.min(0.97, 0.05 + 0.92 * feitos / previsto)); };
+  const ps = await partes(arquivos), fotos = ps.filter(p => p.foto);
+  let feitos = 0, previsto = Math.max(1, fotos.length);
+  const passo = () => { feitos++; progresso && progresso(Math.min(0.97, 0.05 + 0.92 * feitos / Math.max(previsto, feitos + 1))); };
+  const texto = rs => ps.map((p, i) => p.texto || (rs[i] ? rs[i].texto : '')).join('\n');
 
-  /* 1ª passada: cinza com contraste, foto endireitada */
-  const p1 = await passada(ps, 'cinza', () => 0, passo);
-  let r = ler(p1.texto);
-  if (pontos(tipo, r) >= PONTOS_MAX[tipo] || !ps.some(p => p.foto)) return r;
+  /* 1ª: documento recortado, endireitado, na posição certa, em cinza */
+  const r1 = await Promise.all(ps.map(p => p.foto ? primeira(p, passo) : null));
+  let r = ler(texto(r1));
+  if (pontos(tipo, r) >= PONTOS_MAX[tipo] || !fotos.length) return r;
 
-  /* 2ª: preto e branco adaptativo (sombra, luz desigual, fundo estampado do RG) */
-  previsto += nf;
-  const p2 = await passada(ps, 'pb', () => 0, passo);
-  r = juntar(r, ler(p2.texto));
+  /* 2ª: preto e branco adaptativo (sombra, reflexo, fundo estampado) na mesma posição */
+  previsto += fotos.length;
+  const r2 = await Promise.all(ps.map(async p => { if (!p.foto) return null; const x = await lerFoto(p, p.giro, 'pb'); passo(); return x; }));
+  r = juntar(r, ler(texto(r2)));
   if (pontos(tipo, r) >= PONTOS_MAX[tipo]) return r;
 
-  /* 3ª: foto deitada ou de cabeça para baixo — só as fotos com confiança muito baixa. Lê girando 90° para cada
-     lado (e 180° se ainda estiver ruim) e fica com o giro de MAIOR confiança: o giro errado lê lixo. */
-  const ruins = ps.map((p, i) => p.foto && Math.max(p1.confs[i], p2.confs[i]) < 55 ? i : -1).filter(i => i >= 0);
+  /* 3ª: só fotos com confiança muito baixa: outras posições (90° para cada lado, 180°), fica a de maior confiança */
+  const ruins = ps.map((p, i) => p.foto && Math.max(r1[i].conf, r2[i].conf) < 55 ? i : -1).filter(i => i >= 0);
   if (ruins.length) {
-    const melhor = {};
-    for (const extra of [90, -90, 180]) {
-      if (extra === 180 && ruins.every(i => melhor[i] && melhor[i].conf >= 55)) break;
-      previsto += ruins.length;
-      const res = await Promise.all(ruins.map(async i => { const p = ps[i]; const x = await ocr(tratar(p.foto, medirGiroDeitado(p.foto, extra) + extra, 'cinza')); passo(); return [i, x]; }));
-      for (const [i, x] of res) if (!melhor[i] || x.conf > melhor[i].conf) melhor[i] = x;
+    const novos = {};
+    for (const i of ruins) {
+      const p = ps[i];
+      for (const giro of [-90, 90, 180].map(g => p.giro + g).map(g => ((g + 540) % 360) - 180).filter(g => g !== p.giro)) {
+        previsto++; const x = await lerFoto(p, giro, 'cinza'); passo();
+        if (x.conf > Math.max(r1[i].conf, r2[i].conf) && (!novos[i] || x.conf > novos[i].conf)) novos[i] = x;
+        if (novos[i] && novos[i].conf >= 60) break;
+      }
     }
-    const textos = ps.map((p, i) => melhor[i] && melhor[i].conf > Math.max(p1.confs[i], p2.confs[i]) ? melhor[i].texto : '');
-    if (textos.some(Boolean)) r = juntar(ler(textos.join('\n')), r);
+    if (Object.keys(novos).length) r = juntar(ler(texto(ps.map((p, i) => novos[i] || r1[i]))), r);
   }
   return r;
 }
@@ -182,6 +191,6 @@ export async function lerDocumento(arquivos, tipo, bairrosCota, progresso) {
 export async function lerArquivos(arquivos, progresso) {
   const ps = await partes(arquivos), nf = ps.filter(p => p.foto).length || 1;
   let feitos = 0; progresso && progresso(0.05);
-  const p = await passada(ps, 'cinza', () => 0, () => { feitos++; progresso && progresso(feitos / nf); });
-  return p.texto;
+  const rs = await Promise.all(ps.map(p => p.foto ? primeira(p, () => { feitos++; progresso && progresso(Math.min(0.97, feitos / nf)); }) : null));
+  return ps.map((p, i) => p.texto || (rs[i] ? rs[i].texto : '')).join('\n');
 }

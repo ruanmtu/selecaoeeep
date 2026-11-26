@@ -55,3 +55,57 @@ export function orientacao(g, w, h) {
   a = melhorEm(a - 1, a + 1, 0.25);
   return Math.abs(a) < 0.5 ? 0 : a;
 }
+
+/** caixa do documento na foto: a maior região clara ligada (o papel), numa cópia pequena em cinza.
+ *  Devolve {x, y, w, h} em frações (0 a 1) ou null quando não vale recortar (papel ocupa quase tudo ou não achou). */
+export function recorte(g, w, h) {
+  const n = w * h, m = new Uint8Array(n);
+  /* claro = acima do meio-termo entre o fundo e o papel (Otsu simples) */
+  const hist = new Uint32Array(256); for (let i = 0; i < n; i++) hist[g[i]]++;
+  let soma = 0; for (let i = 0; i < 256; i++) soma += i * hist[i];
+  let sB = 0, wB = 0, mx = -1, lim = 128;
+  for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = n - wB; if (!wF) break; sB += t * hist[t]; const mB = sB / wB, mF = (soma - sB) / wF, v = wB * wF * (mB - mF) ** 2; if (v > mx) { mx = v; lim = t; } }
+  for (let i = 0; i < n; i++) m[i] = g[i] > lim ? 1 : 0;
+  /* fecha os buracos do texto escuro dentro do papel (dilata 2 px) e depois afina 4 px: as manchas claras do fundo
+     (granito, madeira) que encostam no papel por pontes finas se soltam; o papel, grande, sobrevive */
+  const passa = (src, r, dil) => { const o = new Uint8Array(n); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let v = dil ? 0 : 1; for (let dy = -r; dy <= r && (dil ? !v : v); dy++) for (let dx = -r; dx <= r; dx++) { const yy = y + dy, xx = x + dx; const q = yy >= 0 && yy < h && xx >= 0 && xx < w ? src[yy * w + xx] : 0; if (dil && q) { v = 1; break; } if (!dil && !q) { v = 0; break; } } o[y * w + x] = v; } return o; };
+  const d = passa(passa(m, 2, true), 4, false);
+  const vis = new Int32Array(n).fill(-1), fila = new Int32Array(n); let melhor = null;
+  for (let s = 0; s < n; s++) {
+    if (!d[s] || vis[s] >= 0) continue;
+    let ini = 0, fim = 0, x0 = w, y0 = h, x1 = 0, y1 = 0, cont = 0; fila[fim++] = s; vis[s] = s;
+    while (ini < fim) {
+      const p = fila[ini++], x = p % w, y = (p / w) | 0; cont++;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      const viz = [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1];
+      for (const q of viz) if (q >= 0 && d[q] && vis[q] < 0) { vis[q] = s; fila[fim++] = q; }
+    }
+    if (!melhor || cont > melhor.cont) melhor = { cont, x0, y0, x1, y1, id: s };
+  }
+  if (!melhor) return null;
+  /* aparo: só ficam as colunas/linhas em que o bloco é "cheio" (≥ 50% do máximo; a margem de 4% devolve os cantos de um papel torto). Mancha clara do fundo grudada
+     na lateral do papel é estreita e cai fora; o papel, retangular, fica inteiro */
+  const col = new Uint32Array(w), lin = new Uint32Array(h);
+  for (let i = 0; i < n; i++) if (vis[i] === melhor.id) { col[i % w]++; lin[(i / w) | 0]++; }
+  const mc = Math.max(...col), ml = Math.max(...lin);
+  let ax0 = 0, ax1 = w - 1, ay0 = 0, ay1 = h - 1;
+  while (ax0 < w && col[ax0] < mc * 0.5) ax0++; while (ax1 > 0 && col[ax1] < mc * 0.5) ax1--;
+  while (ay0 < h && lin[ay0] < ml * 0.5) ay0++; while (ay1 > 0 && lin[ay1] < ml * 0.5) ay1--;
+  if (ax1 > ax0 && ay1 > ay0) Object.assign(melhor, { x0: ax0, x1: ax1, y0: ay0, y1: ay1 });
+  const area = (melhor.x1 - melhor.x0 + 1) * (melhor.y1 - melhor.y0 + 1) / n;
+  if (area > 0.85 || area < 0.08 || melhor.cont / n < 0.06) return null;   // já é só o documento, ou não achou o papel
+  const mg = 0.04 + 4 / Math.max(w, h);
+  const x = Math.max(0, melhor.x0 / w - mg), y = Math.max(0, melhor.y0 / h - mg);
+  return { x, y, w: Math.min(1, (melhor.x1 + 1) / w + mg) - x, h: Math.min(1, (melhor.y1 + 1) / h + mg) - y };
+}
+
+/** texto deitado (90°)? Em texto na horizontal, percorrer as LINHAS da imagem cruza muito mais traços de letra
+ *  (liga-desliga claro/escuro) do que percorrer as COLUNAS. Recebe uma cópia pequena (~700 px) só do documento. */
+export function deitada(g, w, h) {
+  const b = limiar(g, w, h, 12, 0.80);
+  let th = 0, tv = 0;
+  for (let y = 0; y < h; y++) for (let x = 1; x < w; x++) if (b[y * w + x] !== b[y * w + x - 1]) th++;
+  for (let x = 0; x < w; x++) for (let y = 1; y < h; y++) if (b[y * w + x] !== b[(y - 1) * w + x]) tv++;
+  const rh = th / Math.max(1, h), rv = tv / Math.max(1, w);   // por linha / por coluna (independe do formato)
+  return { deitada: rv > rh * 1.12, razao: rv / Math.max(1, rh) };
+}
