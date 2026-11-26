@@ -6,7 +6,7 @@
  * ====================================================================== */
 declare(strict_types=1);
 
-const SEL_VERSAO = '8';
+const SEL_VERSAO = '9';
 const SEL_RAIZ_ESCOLA = 'https://eeepvenceslau.com.br/';
 const SEL_DISC_PADRAO = ['Língua Portuguesa', 'Matemática', 'Ciências', 'História', 'Geografia', 'Arte', 'Educação Física', 'Língua Inglesa', 'Ensino Religioso'];
 
@@ -247,6 +247,17 @@ function sel_classificar(string $curso): array
     return ['lista' => $lista, 'vagas' => ['total' => $total, 'ampla' => $vampla, 'pcd' => $vpcd, 'bairro' => $vbairro], 'usados' => $usados, 'extra' => $extra];
 }
 
-/* ---------- leitura com o Gemini (opcional: precisa de GEMINI_API_KEY no config.php) ---------- */
+/* ---------- leitura automática por IA, só serviços gratuitos (chaves no config.php) ----------
+ * 1º Gemini (GEMINI_API_KEY) · 2º Groq (GROQ_API_KEY). Basta um dos dois; com os dois, um cobre o limite do outro.
+ * A opção "leitura" = 'gemini' (nome antigo mantido) liga a leitura automática; 'aparelho' desliga. */
 function gemini_configurado(): bool { return defined('GEMINI_API_KEY') && strlen((string)GEMINI_API_KEY) > 20; }
-function gemini_ativo(): bool { return gemini_configurado() && cfg('leitura', 'gemini') === 'gemini' && function_exists('curl_init'); }
+function groq_configurado(): bool { return defined('GROQ_API_KEY') && strlen((string)GROQ_API_KEY) > 20; }
+function ia_configurada(): bool { return gemini_configurado() || groq_configurado(); }
+function ia_ativa(): bool { return ia_configurada() && cfg('leitura', 'gemini') === 'gemini' && function_exists('curl_init'); }
+function gemini_ativo(): bool { return gemini_configurado() && ia_ativa(); }
+/** leituras feitas hoje por serviço: ['data' => 'Y-m-d', 'gemini' => n, 'groq' => n, 'falhas' => n] */
+function leituras_hoje(): array
+{
+    $c = json_decode((string)cfg('leituras_dia'), true);
+    return is_array($c) && ($c['data'] ?? '') === date('Y-m-d') ? $c : ['data' => date('Y-m-d')];
+}

@@ -77,6 +77,21 @@ export async function textoPdf(arquivo) {
     return t.replace(/\s/g, '').length > 80 ? t : '';
   } catch (e) { return ''; }
 }
+/** PDF escaneado -> fotos JPEG das primeiras páginas (os serviços de IA leem foto melhor e mais rápido que PDF) */
+export async function imagensPdf(arquivo, max = 3, lado = 2000) {
+  const doc = await pdfjs.getDocument({ data: await arquivo.arrayBuffer(), cMapUrl: base + 'cmaps/', cMapPacked: true, standardFontDataUrl: base + 'standard_fonts/', isEvalSupported: false }).promise;
+  const fotos = [];
+  for (let n = 1; n <= Math.min(doc.numPages, max); n++) {
+    const pg = await doc.getPage(n), v1 = pg.getViewport({ scale: 1 });
+    const vp = pg.getViewport({ scale: Math.min(3, lado / Math.max(v1.width, v1.height)) });
+    const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    await pg.render({ canvasContext: x, viewport: vp }).promise;
+    const b = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.85));
+    if (b) fotos.push(new File([b], `pagina${n}.jpg`, { type: 'image/jpeg' }));
+  }
+  return fotos;
+}
 export async function lerArquivos(arquivos, progresso) {
   let tudo = '';
   const lista = [...arquivos];

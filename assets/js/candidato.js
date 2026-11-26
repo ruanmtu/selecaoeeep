@@ -1,6 +1,6 @@
 /* Tela do candidato: leitura dos documentos, tabela de notas e média ao vivo */
 // o "?v=" obriga o navegador a baixar a versão nova (sem ele, um leitura.js antigo guardado no cache quebrava a página toda)
-import * as L from './leitura.js?v=8';
+import * as L from './leitura.js?v=9';
 const { lerArquivos, interpretarDocumento, interpretarNotas } = L;
 async function textoPdf(f) { try { return L.textoPdf ? await L.textoPdf(f) : ''; } catch (e) { return ''; } }
 const $ = s => document.querySelector(s);
@@ -86,7 +86,7 @@ function aplicarNotas(k, r) {
   media();
   return [n, Object.keys(r).length];
 }
-/* foto grande -> JPEG de até 2000 px (envio mais rápido para o Gemini) */
+/* foto grande -> JPEG de até 2000 px (envio mais rápido para a leitura automática) */
 async function reduzir(f, lado = 1600) {
   if (!f.type.startsWith('image/') || f.size < 350 * 1024) return f;
   try {
@@ -97,17 +97,23 @@ async function reduzir(f, lado = 1600) {
     return b ? new File([b], 'foto.jpg', { type: 'image/jpeg' }) : f;
   } catch (e) { return f; }
 }
-async function lerGemini(k, arquivos) {
+async function lerNuvem(k, arquivos) {
   const fd = new FormData(); fd.append('csrf', window.SEL_CSRF); fd.append('tipo', k);
+  let n = 0;
   for (const f of [...arquivos].slice(0, 6)) {
-    if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) { const t = await textoPdf(f); if (t) { fd.append('texto[]', t); continue; } }   // PDF com texto: manda só o texto
-    fd.append('arq[]', await reduzir(f, k === 'doc' ? 1600 : 2200));
+    if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+      const t = await textoPdf(f); if (t) { fd.append('texto[]', t); continue; }   // PDF com texto: manda só o texto
+      /* PDF escaneado: vira fotos das páginas (todos os serviços gratuitos leem foto) */
+      let fotos = []; try { fotos = L.imagensPdf ? await L.imagensPdf(f, 3, k === 'doc' ? 1600 : 2200) : []; } catch (e) {}
+      if (fotos.length) { for (const p of fotos) if (n++ < 6) fd.append('arq[]', p); continue; }
+    }
+    if (n++ < 6) fd.append('arq[]', await reduzir(f, k === 'doc' ? 1600 : 2200));
   }
   const r = await fetch('ler.php', { method: 'POST', body: fd, credentials: 'same-origin' });
   const bruto = await r.text(); let j;
   try { j = JSON.parse(bruto); } catch (e) {   // o servidor não devolveu JSON: mostra o motivo real
     const det = bruto.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
-    j = { erro: r.status === 504 || r.status === 502 ? 'O servidor desistiu de esperar o Gemini (erro ' + r.status + '). Tente de novo.'
+    j = { erro: r.status === 504 || r.status === 502 ? 'O servidor desistiu de esperar a leitura (erro ' + r.status + '). Tente de novo.'
       : r.status === 413 ? 'Arquivo grande demais para o servidor (erro 413). Mande uma foto menor ou o PDF.'
       : 'O servidor respondeu com erro ' + r.status + (det ? ': ' + det : ' sem detalhes') + '.' };
   }
@@ -115,7 +121,8 @@ async function lerGemini(k, arquivos) {
   return j;
 }
 function resultado(k, j, aviso = '') {
-  const motor = j.motor === 'gemini' ? ` <span class="sl-selo ok">Gemini${j.segundos ? ' · ' + String(j.segundos).replace('.', ',') + ' s' : ''}</span>` : ' <span class="sl-selo">aparelho</span>';
+  const NOMES = { gemini: 'Gemini', groq: 'Groq' };
+  const motor = NOMES[j.motor] ? ` <span class="sl-selo ok">${NOMES[j.motor]}${j.segundos ? ' · ' + String(j.segundos).replace('.', ',') + ' s' : ''}</span>` : ' <span class="sl-selo">aparelho</span>';
   const achados = aplicarDoc(k, j.dados || {});
   if (k === 'doc' || k === 'end') {
     const dup = j.dados && j.dados.cpf_duvida ? ' <b>Atenção: o CPF lido não confere, verifique.</b>' : '';
@@ -132,10 +139,10 @@ async function processar(k, arquivos) {
   if (!arquivos.length) return;
   if (!repetindo) { const mini = document.querySelector(`[data-mini="${k}"]`); [...arquivos].forEach(f => { if (f.type.startsWith('image/')) { const i = document.createElement('img'); i.src = URL.createObjectURL(f); i.alt = ''; mini.appendChild(i); } else { const s = document.createElement('span'); s.textContent = 'PDF'; mini.appendChild(s); } }); }
   if (window.SEL_GEMINI) {
-    status(k, `<span class="spinner-border spinner-border-sm"></span><span>Lendo com o Gemini…</span>`);
-    try { resultado(k, await lerGemini(k, arquivos)); return; }
+    status(k, `<span class="spinner-border spinner-border-sm"></span><span>Lendo o documento…</span>`);
+    try { resultado(k, await lerNuvem(k, arquivos)); return; }
     catch (e) {   /* não preenche nada sozinho com a leitura do aparelho (ela erra muito): o usuário escolhe */
-      status(k, `<i class="bi bi-exclamation-triangle"></i><span>Gemini não leu: ${e.message}<br><button type="button" class="btn btn-sm btn-primary mt-2 me-1" data-repetir="${k}"><i class="bi bi-arrow-repeat me-1"></i>Tentar de novo com o Gemini</button><button type="button" class="btn btn-sm btn-light mt-2" data-local="${k}"><i class="bi bi-phone me-1"></i>Ler neste aparelho</button></span>`, true);
+      status(k, `<i class="bi bi-exclamation-triangle"></i><span>A leitura automática falhou: ${e.message}<br><button type="button" class="btn btn-sm btn-primary mt-2 me-1" data-repetir="${k}"><i class="bi bi-arrow-repeat me-1"></i>Tentar de novo</button><button type="button" class="btn btn-sm btn-light mt-2" data-local="${k}"><i class="bi bi-phone me-1"></i>Ler neste aparelho</button></span>`, true);
       return;
     }
   }

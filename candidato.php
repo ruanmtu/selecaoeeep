@@ -92,7 +92,8 @@ require __DIR__ . '/includes/topo.php';
 <form method="post" id="fCand" autocomplete="off" novalidate>
 <?= csrf_campo() ?><input type="hidden" name="id" value="<?= (int)($c['id'] ?? 0) ?>">
 
-<p class="sl-motor"><i class="bi bi-<?= gemini_ativo() ? 'stars' : 'phone' ?>"></i><?= gemini_ativo() ? 'Leitura dos documentos pelo <b>Gemini</b>. As fotos não ficam guardadas no sistema.' : 'Leitura dos documentos <b>neste aparelho</b>. As fotos não são enviadas nem guardadas.' ?></p>
+<?php $servicos = implode(' e ', array_filter([gemini_configurado() ? 'Gemini' : '', groq_configurado() ? 'Groq' : ''])); ?>
+<p class="sl-motor"><i class="bi bi-<?= ia_ativa() ? 'stars' : 'phone' ?>"></i><?= ia_ativa() ? 'Leitura automática dos documentos (<b>' . e($servicos) . '</b>, planos gratuitos). As fotos não ficam guardadas no sistema.' : 'Leitura dos documentos <b>neste aparelho</b>. As fotos não são enviadas nem guardadas.' ?></p>
 
 <!-- 1 · documento do candidato -->
 <section class="sl-card">
@@ -200,5 +201,5 @@ require __DIR__ . '/includes/topo.php';
 </div>
 </form>
 <?php
-$scripts = '<script>window.SEL_BAIRROS = ' . json_encode(sel_bairros(), JSON_UNESCAPED_UNICODE) . '; window.SEL_GEMINI = ' . (gemini_ativo() ? 'true' : 'false') . '; window.SEL_CSRF = ' . json_encode(csrf_token()) . ';</script><script type="module" src="assets/js/candidato.js?v=' . SEL_VERSAO . '"></script>';
+$scripts = '<script>window.SEL_BAIRROS = ' . json_encode(sel_bairros(), JSON_UNESCAPED_UNICODE) . '; window.SEL_GEMINI = ' . (ia_ativa() ? 'true' : 'false') . '; window.SEL_CSRF = ' . json_encode(csrf_token()) . ';</script><script type="module" src="assets/js/candidato.js?v=' . SEL_VERSAO . '"></script>';
 require __DIR__ . '/includes/rodape.php';
