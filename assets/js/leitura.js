@@ -5,9 +5,9 @@
  * Sensibilidade: se faltar algum campo, lê de novo em preto e branco adaptativo; se a confiança vier muito baixa
  * (foto deitada), tenta girando 90° para cada lado. As regras de cada documento ficam em interpretar.js. */
 import * as pdfjs from '../vendor/pdfjs/pdf.js';
-import { cinza, limiar, orientacao, recorte, deitada } from './imagem.js?v=14';
-import { lerTabela, semLinhas, recortarCelula, valorNota } from './tabela.js?v=14';
-import { interpretarIdentidade, interpretarComprovante, interpretarDocumento, interpretarNotas, pontos, PONTOS_MAX, notaNome } from './interpretar.js?v=14';
+import { cinza, limiar, orientacao, recorte, deitada } from './imagem.js?v=16';
+import { lerTabela, lerDeclaracao, semLinhas, recortarCelula, valorNota } from './tabela.js?v=16';
+import { interpretarIdentidade, interpretarComprovante, interpretarDocumento, interpretarNotas, pontos, PONTOS_MAX, notaNome } from './interpretar.js?v=16';
 export { interpretarDocumento, interpretarNotas, interpretarIdentidade, interpretarComprovante };
 
 const base = new URL('../vendor/pdfjs/', import.meta.url).href;
@@ -274,4 +274,40 @@ export async function lerHistorico(arquivos, progresso) {
     total.escola ??= r.escola; total.aviso ??= r.aviso;
   }
   return total;
+}
+
+/**
+ * Declaração do 9º ano (médias escritas à caneta). A caligrafia é difícil para o leitor: cada média é lida de três
+ * jeitos e só entra quando as três leituras concordam e têm forma de nota; o resto fica para o professor digitar.
+ * Devolve { notas: {disciplina: média}, disciplinas: [todas as achadas na declaração], aviso }
+ */
+export async function lerDeclaracao9(arquivos, progresso) {
+  const ps = (await partes(arquivos)).filter(p => p.foto);
+  if (!ps.length) return null;
+  const p = ps[0]; analisar(p);
+  const wk = await leitorNumeros();
+  let r = null;
+  /* posição: a detectada e, se não achar a tabela, em pé e deitada (folha com tabela engana a detecção) */
+  for (const g0 of [...new Set([p.giros[0], 0, -90, 90])]) {
+    const giro = medirGiro(p, g0);
+    const { x, W, H } = desenhar(p.foto, p.caixa, giro, 2400);
+    const g = cinza(x.getImageData(0, 0, W, H).data, W, H), b = limiar(g, W, H, 16, 0.85);
+    progresso && progresso(0.2);
+    const lerTexto = async caixas => { const out = []; for (const cx of caixas) { const rc = recortarCelula(g, W, H, cx); out.push((await wk.recognize(canvasDe(rc.d, rc.w, rc.h, 72))).data.text.trim()); } return out; };
+    let feitas = 0;
+    const lerCelulas = async caixas => {
+      const out = [];
+      for (const cx of caixas) {
+        const rc = recortarCelula(g, W, H, cx);
+        const ts = [(await wk.recognize(canvasDe(rc.d, rc.w, rc.h, 72))).data.text, (await wk.recognize(canvasDe(rc.d, rc.w, rc.h, 110))).data.text, (await wk.recognize(limiarCanvas(canvasDe(rc.d, rc.w, rc.h, 72), 110))).data.text].map(t => t.trim());
+        const vs = ts.map(t => { const s = t.replace(/[^0-9.,]/g, ''); return /^(\d{1,2}[.,]\d{1,2}|10)$/.test(s) ? valorNota(s) : null; });
+        out.push(vs[0] !== null && vs.every(v => v === vs[0]) ? String(vs[0]) : '');   // só com as três de acordo
+        feitas++; progresso && progresso(Math.min(0.97, 0.3 + feitas / 12));
+      }
+      return out;
+    };
+    r = await lerDeclaracao(b, W, H, lerCelulas, lerTexto);
+    if ((r.celulas || []).length >= 3) break;
+  }
+  return { notas: r.notas, disciplinas: (r.celulas || []).map(c => c.disc), aviso: r.aviso };
 }

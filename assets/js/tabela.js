@@ -312,3 +312,27 @@ export function recortarCelula(g, W, H, cx) {
   return { d, w: ow, h: oh };
 }
 
+
+/**
+ * Declaração do 9º ano: tabela "DISCIPLINAS | MÉDIA" (média escrita à mão).
+ * Para cada linha da tabela, lê o nome impresso (lerTexto) e a média (lerCelulas, só números).
+ * Devolve { notas: {disciplina: média}, aviso }
+ */
+export async function lerDeclaracao(b, w, h, lerCelulas, lerTexto) {
+  const F = faixasDe(b, w, h).filter(f => f.y1 - f.y0 < h * 0.05);
+  const bandas = F.filter(f => bordasV(b, w, h, f.y0, f.y1, Math.max(0, f.x0 - 4), Math.min(w - 1, f.x1 + 4)).length >= 3);
+  const res = { notas: {}, aviso: null, celulas: [] };
+  if (bandas.length < 3) { res.aviso = 'Não achei a tabela de médias da declaração.'; return res; }
+  const cols = colunasDe(b, w, h, bandas);
+  if (cols.length < 2) { res.aviso = 'Não achei as colunas da tabela (disciplina e média).'; return res; }
+  /* coluna do nome: a 1ª; coluna da média: a seguinte */
+  const nomes = await lerTexto(bandas.map(f => caixa(cols[0], f)));
+  const linhas = [];
+  bandas.forEach((f, i) => { const d = disciplinaDaLinha(String(nomes[i]).split(/\s+/).map(t => ({ t }))); if (d && !linhas.some(l => l.d === d)) linhas.push({ d, f }); });
+  if (!linhas.length) { res.aviso = 'Não reconheci as disciplinas da declaração.'; return res; }
+  const cx = linhas.map(l => caixa(cols[1], l.f));
+  res.celulas = linhas.map((l, i) => ({ disc: l.d, cx: cx[i] }));
+  const t = await lerCelulas(cx);
+  linhas.forEach((l, i) => { const v = valorNota(t[i]); if (v !== null) res.notas[l.d] = v; });
+  return res;
+}

@@ -43,9 +43,9 @@ if (eh_post()) {
     }
     foreach ((array)($_POST['d9'] ?? []) as $i => $disc) {
         $disc = mb_substr(trim((string)$disc), 0, 60); if ($disc === '') continue;
-        $b = [];
-        foreach ([1, 2, 3, 4] as $k) { $v = $nota($_POST['b' . $k][$i] ?? ''); if ($v === false) $erros[] = "Nota inválida em $disc (9º ano, {$k}º bimestre)."; $b[] = $v === false ? null : $v; }
-        if (array_filter($b, fn($x) => $x !== null)) $notas['9'][$disc] = $b;
+        /* 9º ano: uma média por disciplina (a da declaração da escola) */
+        $v = $nota($_POST['m9'][$i] ?? '');
+        if ($v === false) $erros[] = "Nota inválida em $disc (média do 9º ano): use de 0 a 10."; elseif ($v !== null) $notas['9'][$disc] = $v;
     }
     $m = notas_media($notas);
     if ($erros) {
@@ -76,7 +76,7 @@ $notas = $c ? (json_decode((string)$c['notas'], true) ?: []) : [];
 if ($v) {
     $notas = ['6' => [], '7' => [], '8' => [], '9' => []];
     foreach ((array)($v['d68'] ?? []) as $i => $disc) if (trim($disc) !== '') foreach (['6', '7', '8'] as $a) $notas[$a][$disc] = $v['n' . $a][$i] ?? '';
-    foreach ((array)($v['d9'] ?? []) as $i => $disc) if (trim($disc) !== '') $notas['9'][$disc] = [$v['b1'][$i] ?? '', $v['b2'][$i] ?? '', $v['b3'][$i] ?? '', $v['b4'][$i] ?? ''];
+    foreach ((array)($v['d9'] ?? []) as $i => $disc) if (trim($disc) !== '') $notas['9'][$disc] = $v['m9'][$i] ?? '';
 }
 $val = fn($k) => $v[$k] ?? ($c[$k] ?? '');
 $disc68 = array_values(array_unique(array_merge(array_keys($notas['6'] ?? []), array_keys($notas['7'] ?? []), array_keys($notas['8'] ?? []))));
@@ -153,12 +153,14 @@ require __DIR__ . '/includes/topo.php';
 
 <!-- 4 · 9º ano -->
 <section class="sl-card">
-    <div class="sl-card-cab"><h2><i class="bi bi-journal-check"></i>4 · Histórico do 9º ano</h2><small class="text-secondary">bimestres que já tiverem nota</small></div>
-    <div class="sl-card-corpo"><div class="row g-3 mb-2"><div class="col-lg-4"><label class="sl-foto" data-ler="h9"><input type="file" accept="image/*,application/pdf" multiple hidden><i class="bi bi-camera"></i><b>Foto ou PDF do 9º ano</b><small>Foto ou PDF · pode mandar mais de uma</small></label>
+    <div class="sl-card-cab"><h2><i class="bi bi-journal-check"></i>4 · Declaração do 9º ano</h2><small class="text-secondary">média de cada disciplina até o último bimestre</small></div>
+    <div class="sl-card-corpo"><div class="row g-3 mb-2"><div class="col-lg-4"><label class="sl-foto" data-ler="h9"><input type="file" accept="image/*,application/pdf" multiple hidden><i class="bi bi-camera"></i><b>Foto da declaração do 9º ano</b><small>Foto ou PDF · pode mandar mais de uma</small></label>
                 <div class="sl-miniaturas" data-mini="h9"></div>
                 <div class="sl-ler" data-status="h9" hidden></div></div></div>
-    <div class="sl-tab-rolar"><table class="sl-notas" id="t9"><thead><tr><th>Disciplina</th><th>1º bim</th><th>2º bim</th><th>3º bim</th><th>4º bim</th><th>Média</th><th></th></tr></thead><tbody>
-            <?php foreach ($disc9 as $ds): $b = (array)($notas['9'][$ds] ?? []); ?><tr><td><input class="form-control" name="d9[]" value="<?= e($ds) ?>"></td><?php foreach ([1, 2, 3, 4] as $k): ?><td><input class="form-control nota" name="b<?= $k ?>[]" inputmode="decimal" value="<?= e($fmt($b[$k - 1] ?? '')) ?>"></td><?php endforeach; ?><td class="text-center fw-bold m9">—</td><td><button class="sl-rm" type="button" title="Tirar a disciplina" aria-label="Tirar a disciplina"><i class="bi bi-x-lg"></i></button></td></tr><?php endforeach; ?>
+    <div class="sl-tab-rolar"><table class="sl-notas" id="t9"><thead><tr><th>Disciplina</th><th>Média do 9º ano</th><th></th></tr></thead><tbody>
+            <?php foreach ($disc9 as $ds): $mv = $notas['9'][$ds] ?? '';
+                /* cadastro antigo com bimestres: mostra a média deles (ao salvar, vira média única) */
+                if (is_array($mv)) { $bs = array_filter($mv, fn($x) => $x !== null && $x !== '' && is_numeric($x)); $mv = $bs ? round(array_sum($bs) / count($bs), 2) : ''; } ?><tr><td><input class="form-control" name="d9[]" value="<?= e($ds) ?>"></td><td><input class="form-control nota" name="m9[]" inputmode="decimal" value="<?= e($fmt($mv)) ?>"></td><td><button class="sl-rm" type="button" title="Tirar a disciplina" aria-label="Tirar a disciplina"><i class="bi bi-x-lg"></i></button></td></tr><?php endforeach; ?>
         </tbody></table></div>
         <button class="btn btn-light btn-sm mt-2" type="button" data-add="t9"><i class="bi bi-plus-lg me-1"></i>Disciplina</button>
     </div>

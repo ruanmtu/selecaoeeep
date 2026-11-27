@@ -1,6 +1,6 @@
 /* Tela do candidato: leitura dos documentos, tabela de notas e média ao vivo */
 // o "?v=" obriga o navegador a baixar a versão nova (sem ele, um leitura.js antigo guardado no cache quebrava a página toda)
-import * as L from './leitura.js?v=14';
+import * as L from './leitura.js?v=16';
 const { lerArquivos, lerDocumento, interpretarDocumento, interpretarNotas } = L;
 const $ = s => document.querySelector(s);
 const num = v => { v = String(v).trim().replace(',', '.'); if (v === '' || isNaN(v)) return null; let n = parseFloat(v); if (n > 10 && n <= 100) n /= 10; return n >= 0 && n <= 10 ? n : NaN; };
@@ -13,11 +13,9 @@ function media() {
     if (!tr.querySelector('[name="d68[]"]').value.trim()) return;
     ['6', '7', '8'].forEach((a, i) => { const inp = tr.querySelectorAll('.nota')[i], v = num(inp.value); inp.classList.toggle('erro', Number.isNaN(v)); if (v !== null && !isNaN(v)) { soma += v; qtd++; anos[a][0] += v; anos[a][1]++; } });
   });
-  document.querySelectorAll('#t9 tbody tr').forEach(tr => {
-    const vs = [...tr.querySelectorAll('.nota')].map(i => { const v = num(i.value); i.classList.toggle('erro', Number.isNaN(v)); return v; }).filter(v => v !== null && !isNaN(v));
-    const m = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
-    tr.querySelector('.m9').textContent = br(m);
-    if (m !== null && tr.querySelector('[name="d9[]"]').value.trim()) { soma += m; qtd++; anos[9][0] += m; anos[9][1]++; }
+  document.querySelectorAll('#t9 tbody tr').forEach(tr => {   // 9º ano: uma média por disciplina
+    const inp = tr.querySelector('.nota'), m = num(inp.value); inp.classList.toggle('erro', Number.isNaN(m));
+    if (m !== null && !isNaN(m) && tr.querySelector('[name="d9[]"]').value.trim()) { soma += m; qtd++; anos[9][0] += m; anos[9][1]++; }
   });
   $('#mGeral').textContent = qtd ? br(soma / qtd, 3) : '—';
   for (const a in anos) $('#mA' + a).textContent = anos[a][1] ? br(anos[a][0] / anos[a][1]) : '—';
@@ -95,7 +93,11 @@ function resultado(k, j) {
   } else {
     const [n, d] = aplicarNotas(k, j.notas || {});
     const extra = achados.length ? ` Também: <b>${achados.join(', ')}</b>.` : '';
-    const nove = j.extra9 ? ` O 9º ano (nota final do histórico) foi para a parte 4, igual nos 4 bimestres.` : '';
+    if (k === 'h9' && j.decl !== undefined) {
+      status(k, `<i class="bi bi-${n ? 'check-circle' : 'pencil'}"></i><span>${n ? `<b>${n} médias</b> lidas com segurança${motor}. ` : `Declaração preenchida à caneta${motor}: `}${n ? 'Digite as outras olhando a foto e confira tudo antes de salvar.' : 'digite as médias olhando a foto (a caligrafia não deu para ler com segurança).'}${j.aviso ? ' ' + j.aviso : ''}</span>`, false);
+      return;
+    }
+    const nove = j.extra9 ? ` O 9º ano (média do histórico) foi para a parte 4.` : '';
     status(k, n || j.extra9 ? `<i class="bi bi-check-circle"></i><span><b>${n} notas</b> lidas em ${d} disciplinas${motor}.${extra}${nove} Confira com o documento antes de salvar.</span>` : `<i class="bi bi-exclamation-triangle"></i><span>${j.aviso || 'Não achei as notas nesse arquivo.'}${motor} Tente uma foto mais de perto, bem reta, ou digite.</span>`, !n && !j.extra9);
   }
 }
@@ -113,12 +115,20 @@ async function processar(k, arquivos) {
       /* histórico em foto: lê a tabela célula por célula; 6º-8º vão para esta parte e o 9º para a parte 4 */
       const r = await L.lerHistorico(arquivos, prog);
       const n68 = {}, n9 = {};
-      for (const [d, v] of Object.entries((r && r.notas) || {})) { if (v.slice(0, 3).some(x => x !== null)) n68[d] = v.slice(0, 3); if (v[3] !== null) n9[d] = [v[3], v[3], v[3], v[3]]; }
+      for (const [d, v] of Object.entries((r && r.notas) || {})) { if (v.slice(0, 3).some(x => x !== null)) n68[d] = v.slice(0, 3); if (v[3] !== null) n9[d] = [v[3]]; }
       const [q9] = Object.keys(n9).length ? aplicarNotas('h9', n9) : [0];
       j = { dados: r && r.escola ? { escola_origem: r.escola } : {}, notas: n68, extra9: q9, aviso: r && r.aviso };
     }
+    else if (k === 'h9' && ![...arquivos].some(f => /pdf/i.test(f.type || f.name)) && L.lerDeclaracao9) {
+      /* declaração do 9º ano (média à caneta): só preenche o que três leituras confirmam */
+      const r = await L.lerDeclaracao9(arquivos, prog);
+      const n9 = {}; for (const [d, v] of Object.entries((r && r.notas) || {})) n9[d] = [v];
+      j = { dados: {}, notas: n9, aviso: r && r.aviso, decl: r && r.disciplinas };
+    }
     else { const texto = await lerArquivos(arquivos, prog); const d = interpretarDocumento(texto, []), dados = {}; for (const c of ['email', 'telefone', 'escola_origem']) if (d[c]) dados[c] = d[c];   // do histórico só vêm contato e escola
-      j = { dados, notas: interpretarNotas(texto, k === 'h68' ? '68' : '9') }; }
+      const nt = interpretarNotas(texto, k === 'h68' ? '68' : '9');
+      if (k === 'h9') for (const d in nt) { const vs = nt[d].filter(x => x !== null); nt[d] = vs.length ? [Math.round(vs.reduce((a, b) => a + b, 0) / vs.length * 100) / 100] : []; }
+      j = { dados, notas: nt }; }
     j.segundos = Math.round((performance.now() - t0) / 100) / 10;
     resultado(k, j);
   } catch (e) {
