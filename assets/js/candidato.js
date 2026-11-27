@@ -1,6 +1,6 @@
 /* Tela do candidato: leitura dos documentos, tabela de notas e média ao vivo */
 // o "?v=" obriga o navegador a baixar a versão nova (sem ele, um leitura.js antigo guardado no cache quebrava a página toda)
-import * as L from './leitura.js?v=13';
+import * as L from './leitura.js?v=14';
 const { lerArquivos, lerDocumento, interpretarDocumento, interpretarNotas } = L;
 const $ = s => document.querySelector(s);
 const num = v => { v = String(v).trim().replace(',', '.'); if (v === '' || isNaN(v)) return null; let n = parseFloat(v); if (n > 10 && n <= 100) n /= 10; return n >= 0 && n <= 10 ? n : NaN; };
@@ -95,7 +95,8 @@ function resultado(k, j) {
   } else {
     const [n, d] = aplicarNotas(k, j.notas || {});
     const extra = achados.length ? ` Também: <b>${achados.join(', ')}</b>.` : '';
-    status(k, n ? `<i class="bi bi-check-circle"></i><span><b>${n} notas</b> lidas em ${d} disciplinas${motor}.${extra} Confira com o documento antes de salvar.</span>` : `<i class="bi bi-exclamation-triangle"></i><span>Não achei as notas nesse arquivo${motor}. Tente uma foto mais de perto, bem reta, ou digite.</span>`, !n);
+    const nove = j.extra9 ? ` O 9º ano (nota final do histórico) foi para a parte 4, igual nos 4 bimestres.` : '';
+    status(k, n || j.extra9 ? `<i class="bi bi-check-circle"></i><span><b>${n} notas</b> lidas em ${d} disciplinas${motor}.${extra}${nove} Confira com o documento antes de salvar.</span>` : `<i class="bi bi-exclamation-triangle"></i><span>${j.aviso || 'Não achei as notas nesse arquivo.'}${motor} Tente uma foto mais de perto, bem reta, ou digite.</span>`, !n && !j.extra9);
   }
 }
 const ultimos = {};
@@ -108,6 +109,14 @@ async function processar(k, arquivos) {
   try {
     let j;
     if (k === 'doc' || k === 'end') j = { dados: await lerDocumento(arquivos, k, window.SEL_BAIRROS, prog) };
+    else if (k === 'h68' && ![...arquivos].some(f => /pdf/i.test(f.type || f.name)) && L.lerHistorico) {
+      /* histórico em foto: lê a tabela célula por célula; 6º-8º vão para esta parte e o 9º para a parte 4 */
+      const r = await L.lerHistorico(arquivos, prog);
+      const n68 = {}, n9 = {};
+      for (const [d, v] of Object.entries((r && r.notas) || {})) { if (v.slice(0, 3).some(x => x !== null)) n68[d] = v.slice(0, 3); if (v[3] !== null) n9[d] = [v[3], v[3], v[3], v[3]]; }
+      const [q9] = Object.keys(n9).length ? aplicarNotas('h9', n9) : [0];
+      j = { dados: r && r.escola ? { escola_origem: r.escola } : {}, notas: n68, extra9: q9, aviso: r && r.aviso };
+    }
     else { const texto = await lerArquivos(arquivos, prog); const d = interpretarDocumento(texto, []), dados = {}; for (const c of ['email', 'telefone', 'escola_origem']) if (d[c]) dados[c] = d[c];   // do histórico só vêm contato e escola
       j = { dados, notas: interpretarNotas(texto, k === 'h68' ? '68' : '9') }; }
     j.segundos = Math.round((performance.now() - t0) / 100) / 10;

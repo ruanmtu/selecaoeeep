@@ -5,8 +5,9 @@
  * Sensibilidade: se faltar algum campo, lê de novo em preto e branco adaptativo; se a confiança vier muito baixa
  * (foto deitada), tenta girando 90° para cada lado. As regras de cada documento ficam em interpretar.js. */
 import * as pdfjs from '../vendor/pdfjs/pdf.js';
-import { cinza, limiar, orientacao, recorte, deitada } from './imagem.js?v=13';
-import { interpretarIdentidade, interpretarComprovante, interpretarDocumento, interpretarNotas, pontos, PONTOS_MAX, notaNome } from './interpretar.js?v=13';
+import { cinza, limiar, orientacao, recorte, deitada } from './imagem.js?v=14';
+import { lerTabela, semLinhas, recortarCelula, valorNota } from './tabela.js?v=14';
+import { interpretarIdentidade, interpretarComprovante, interpretarDocumento, interpretarNotas, pontos, PONTOS_MAX, notaNome } from './interpretar.js?v=14';
 export { interpretarDocumento, interpretarNotas, interpretarIdentidade, interpretarComprovante };
 
 const base = new URL('../vendor/pdfjs/', import.meta.url).href;
@@ -193,4 +194,84 @@ export async function lerArquivos(arquivos, progresso) {
   let feitos = 0; progresso && progresso(0.05);
   const rs = await Promise.all(ps.map(p => p.foto ? primeira(p, () => { feitos++; progresso && progresso(Math.min(0.97, feitos / nf)); }) : null));
   return ps.map((p, i) => p.texto || (rs[i] ? rs[i].texto : '')).join('\n');
+}
+
+/* ---------------- histórico: tabela de notas ---------------- */
+/* leitor só de números: o modelo em INGLÊS lê algarismos soltos muito melhor que o português (medido nos históricos) */
+let numP = null;
+function leitorNumeros() {
+  if (!numP) {
+    numP = (async () => { if (!window.Tesseract) await carregarScript(TESS); const w = await window.Tesseract.createWorker('eng', 1); await w.setParameters({ tessedit_pageseg_mode: '7' }); return w; })();
+    numP.catch(() => { numP = null; });
+  }
+  return numP;
+}
+/* leitor da página do histórico em modo "texto esparso" (acha as palavras soltas de uma tabela) */
+let pagP = null;
+function leitorPagina() {
+  if (!pagP) {
+    pagP = (async () => { if (!window.Tesseract) await carregarScript(TESS); const w = await window.Tesseract.createWorker('por', 1); await w.setParameters({ tessedit_pageseg_mode: '11' }); return w; })();
+    pagP.catch(() => { pagP = null; });
+  }
+  return pagP;
+}
+function canvasDe(d, w, h, alt) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'), im = x.createImageData(w, h);
+  for (let i = 0, j = 0; j < d.length; i += 4, j++) { im.data[i] = im.data[i + 1] = im.data[i + 2] = d[j]; im.data[i + 3] = 255; }
+  x.putImageData(im, 0, 0);
+  if (!alt) return c;
+  const k = alt / h, o = document.createElement('canvas'); o.width = Math.max(1, Math.round(w * k)); o.height = alt;
+  const ox = o.getContext('2d'); ox.imageSmoothingQuality = 'high'; ox.drawImage(c, 0, 0, o.width, o.height);
+  return o;
+}
+function limiarCanvas(c, lim) { const x = c.getContext('2d'), d = x.getImageData(0, 0, c.width, c.height); for (let i = 0; i < d.data.length; i += 4) { const v = d.data[i] < lim ? 0 : 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; } x.putImageData(d, 0, 0); return c; }
+/** lê uma célula de nota; se a leitura vier implausível, lê de novo de outros jeitos e vota */
+async function lerNota(wk, rc) {
+  const t1 = (await wk.recognize(canvasDe(rc.d, rc.w, rc.h, 72))).data.text.trim();
+  const s1 = t1.replace(/[^0-9.,]/g, ''), v1 = valorNota(t1);
+  if (v1 !== null && v1 >= 4 && (/^\d{1,2}[.,]\d{1,2}$/.test(s1) || s1 === '10')) return t1;
+  const ts = [t1,
+    (await wk.recognize(canvasDe(rc.d, rc.w, rc.h, 110))).data.text.trim(),
+    (await wk.recognize(limiarCanvas(canvasDe(rc.d, rc.w, rc.h, 72), 110))).data.text.trim()];
+  const votos = {};
+  for (const t of ts) { const v = valorNota(t); if (v === null) continue; const s = String(t).replace(/[^0-9.,]/g, ''); votos[v] = (votos[v] || 0) + 1 + 0.4 * ((/^\d{1,2}[.,]\d{1,2}$/.test(s) || s === '10' ? 2 : 0) + (v >= 5 ? 1 : 0)); }
+  const m = Object.entries(votos).sort((a, b) => b[1] - a[1])[0];
+  return m ? m[0] : t1;
+}
+/**
+ * Histórico escolar (foto ou PDF escaneado): notas do 6º ao 9º lidas da TABELA, célula por célula.
+ * Devolve { notas: {disciplina: [n6, n7, n8, n9]}, escola, aviso } ou null se não achar a tabela.
+ */
+export async function lerHistorico(arquivos, progresso) {
+  const ps = (await partes(arquivos)).filter(p => p.foto);
+  if (!ps.length) return null;
+  const total = { notas: {}, escola: null, aviso: null };
+  let feitas = 0;
+  for (const p of ps) {
+    analisar(p);
+    /* posição: a detectada primeiro; se não achar a tabela, em pé e deitada para cada lado (página cheia de linhas
+       de tabela às vezes engana a detecção de foto deitada) */
+    const giros = [...new Set([p.giros[0], 0, -90, 90])];
+    let r = null;
+    for (const g0 of giros) {
+      const giro = medirGiro(p, g0);
+      const { x, W, H } = desenhar(p.foto, p.caixa, giro, 2400);
+      const g = cinza(x.getImageData(0, 0, W, H).data, W, H), b = limiar(g, W, H, 16, 0.85);
+      progresso && progresso(0.1);
+      const pag = await (await leitorPagina()).recognize(canvasDe(semLinhas(b, W, H), W, H));
+      const palavras = (pag.data.words || []).map(q => ({ t: q.text, x0: q.bbox.x0, y0: q.bbox.y0, x1: q.bbox.x1, y1: q.bbox.y1 }));
+      progresso && progresso(0.3);
+      const wk = await leitorNumeros();
+      const lerCelulas = async caixas => { const out = []; for (const cx of caixas) { out.push(await lerNota(wk, recortarCelula(g, W, H, cx))); feitas++; progresso && progresso(Math.min(0.97, 0.3 + feitas / 140)); } return out; };
+      /* nomes das disciplinas: o mesmo leitor de linha única (os acentos não importam para reconhecer o nome) */
+      const lerTexto = async caixas => { const out = []; for (const cx of caixas) { const rc = recortarCelula(g, W, H, cx); out.push((await wk.recognize(canvasDe(rc.d, rc.w, rc.h, 72))).data.text.trim()); } return out; };
+      const ri = await lerTabela(b, W, H, palavras, lerCelulas, lerTexto);
+      if (!r || Object.keys(ri.notas).length > Object.keys(r.notas).length) r = ri;
+      if (Object.keys(ri.notas).length >= 4) break;
+    }
+    for (const d in r.notas) { const t = total.notas[d] ??= [null, null, null, null]; r.notas[d].forEach((v, i) => { if (v !== null && t[i] === null) t[i] = v; }); }
+    total.escola ??= r.escola; total.aviso ??= r.aviso;
+  }
+  return total;
 }
