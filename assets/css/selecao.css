@@ -197,7 +197,15 @@ tr.sl-corte td { border-bottom: 3px solid var(--laranja) !important; }
 .sl-resumo-cursos .sl-res small { text-transform: none; letter-spacing: 0; font-size: .86rem; color: var(--texto); }
 .sl-res .sl-res-ic { font-size: 1.3rem; color: var(--verde); }
 .sl-res .sl-res-ic.laranja { color: var(--laranja); } .sl-res .sl-res-ic.azul { color: #1d5fb0; } .sl-res .sl-res-ic.cinza { color: #6a786f; }
-@media (min-width: 992px) { .sl-casca { background: linear-gradient(90deg, #062a14 0 236px, transparent 236px); } }
+@media (min-width: 992px) { .sl-casca { background: linear-gradient(90deg, #062a14 0 76px, transparent 76px); } }
+/* menu em trilho (computador): só os ícones; abre por cima do conteúdo ao passar o mouse (ou ao navegar com Tab) */
+@media (min-width: 992px) {
+  .sl-lado { width: 76px; z-index: 35; overflow: hidden; transition: width .18s ease, margin-right .18s ease, box-shadow .18s ease; }
+  .sl-lado:hover, .sl-lado:focus-within { width: 236px; margin-right: -160px; box-shadow: 14px 0 30px -12px rgba(0,0,0,.45); }
+  .sl-lado a, .sl-lado-sair button { white-space: nowrap; overflow: hidden; }
+  .sl-lado a span, .sl-lado-sair span { opacity: 0; transition: opacity .12s ease; }
+  .sl-lado:hover a span, .sl-lado:hover .sl-lado-sair span, .sl-lado:focus-within a span, .sl-lado:focus-within .sl-lado-sair span { opacity: 1; transition-delay: .06s; }
+}
 .sl-motor { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 99px; background: #fff; border: 1px solid var(--borda); font-size: .85rem; color: var(--cinza); margin-bottom: 14px; }
 .sl-motor i { color: var(--laranja); }
 .maiusc { text-transform: uppercase; }
